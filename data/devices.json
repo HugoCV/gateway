@@ -1,0 +1,20 @@
+[
+  {
+    "name": "Nueva Prueba",
+    "serialNumber": "SN-1001",
+    "model": "Altivar320",
+    "connectedAt": "2025-07-16T11:05:23Z"
+  },
+  {
+    "name": "Bomba test",
+    "serialNumber": "SN-1002",
+    "model": "Delta-VFD007EL43A",
+    "connectedAt": "2025-07-16T11:05:23Z"
+  },
+  {
+    "name": "no se",
+    "serialNumber": "SN-1009",
+    "model": "Delta-VFD007EL43A",
+    "connectedAt": "2025-07-16T11:05:23Z"
+  }
+]
