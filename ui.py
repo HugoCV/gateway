@@ -1,7 +1,7 @@
 import tkinter as tk
 from tkinter import scrolledtext, ttk, messagebox
 from mqtt_gateway import MqttGateway, MQTT_HOST, MQTT_PORT
-from config import get_gateway, get_devices
+from config import get_gateway, get_devices, start_continuous_read_in_thread, write_registers, connect_logo
 
 class App(tk.Tk):
     def __init__(self):
@@ -53,10 +53,9 @@ class App(tk.Tk):
         dev_frame = tk.LabelFrame(self, text="Dispositivos", padx=10, pady=5)
         dev_frame.pack(fill="x", padx=10, pady=5)
 
-        # Mapa y Combobox
+        # Combobox de dispositivos
         self.display_map = {f"{d['name']} ({d['serialNumber']})": d for d in self.devices}
         self.selected_device_var = tk.StringVar()
-
         tk.Label(dev_frame, text="Seleccionar dispositivo:").grid(row=0, column=0, sticky="e")
         combo = ttk.Combobox(
             dev_frame,
@@ -66,31 +65,51 @@ class App(tk.Tk):
         )
         combo.grid(row=0, column=1, sticky="we")
         dev_frame.columnconfigure(1, weight=1)
+        combo.bind("<<ComboboxSelected>>", self._on_device_selected)
 
         # Detalle de dispositivo
         self.name_var = tk.StringVar()
         self.serial_var = tk.StringVar()
         self.model_var = tk.StringVar()
-
         tk.Label(dev_frame, text="Nombre:").grid(row=1, column=0, sticky="e")
         tk.Entry(dev_frame, textvariable=self.name_var).grid(row=1, column=1, sticky="we")
         tk.Label(dev_frame, text="Serial:").grid(row=2, column=0, sticky="e")
         tk.Label(dev_frame, textvariable=self.serial_var).grid(row=2, column=1, sticky="we")
         tk.Label(dev_frame, text="Modelo:").grid(row=3, column=0, sticky="e")
         tk.Entry(dev_frame, textvariable=self.model_var).grid(row=3, column=1, sticky="we")
-        tk.Button(dev_frame,
-          text="Enviar Dispositivo",
-          command=self._on_send_device
-        ).grid(row=5, column=0, columnspan=2, pady=5)
+        tk.Button(
+            dev_frame,
+            text="Enviar Dispositivo",
+            command=self._on_send_device
+        ).grid(row=4, column=0, columnspan=2, pady=5)
 
-        combo.bind("<<ComboboxSelected>>", self._on_device_selected)
-
-        # — Botones de acción —
+        # — Botones de acción y RS-485 —
         btn_frame = tk.Frame(self)
-        btn_frame.pack(pady=5)
-        tk.Button(btn_frame, text="Enviar Señales", command=self._on_send_signals) \
+        btn_frame.pack(fill="x", padx=10, pady=5)
+
+        # Botón para enviar señales
+        tk.Button(btn_frame, text="conectar http", command=connect_logo) \
             .pack(side="left", padx=5)
 
+        # Campo y botón para RS-485
+        self.reg = tk.StringVar()
+        tk.Label(btn_frame, text="Registro:").pack(side="left", padx=(20,5))
+        tk.Entry(btn_frame, textvariable=self.reg, width=6).pack(side="left", padx=5)
+
+        self.value = tk.StringVar()
+        tk.Label(btn_frame, text="Valor:").pack(side="left", padx=(20,5))
+        tk.Entry(btn_frame, textvariable=self.value, width=6).pack(side="left", padx=5)
+        tk.Button(
+            btn_frame,
+            text="Escribir",
+            command=lambda: write_registers(1, int(self.reg.get()), int(self.value.get()))
+        ).pack(side="left", padx=5)
+        tk.Button(
+            btn_frame,
+            text="Leer registro continuamente",
+            command=lambda: start_continuous_read_in_thread(1, 8, "COM3", 9600, 4, 1, 3.0, callback=lambda val: print(f'valor: {val}'))
+        ).pack(side="left", padx=5)
+        #leer_registro(slave_id=1, reg_address=0x0001)
         # — Log —
         self.log_widget = scrolledtext.ScrolledText(self, state="disabled", height=8)
         self.log_widget.pack(fill="both", padx=10, pady=5, expand=True)
@@ -123,14 +142,14 @@ class App(tk.Tk):
             return messagebox.showwarning("Faltan datos", "Completa todos los campos del gateway.")
         self.gateway.send_gateway(name, org, loc)
 
-    def _on_send_signals(self):
+    def _on_send_signals(self, val):
         key = self.selected_device_var.get()
         if not key:
             return self._log("⚠ Selecciona un dispositivo primero.")
         device = self.display_map[key]
         gw_id = self.gateway_cfg.get("gatewayId")
         or_id = self.gateway_cfg.get("organizationId")
-        self.gateway.send_signals(or_id, gw_id, device)
+        self.gateway.send_signals(or_id, gw_id, device, val)
 
     def _on_send_device(self):
         key = self.selected_device_var.get()

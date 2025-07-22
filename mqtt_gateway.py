@@ -10,16 +10,16 @@ from bson import ObjectId
 from bson.errors import InvalidId
 from config import load_config, save_gateway, save_devices, get_devices, get_gateway, get_signals
 
-mqtt_cfg = load_config()
+cfg = load_config()
 
 devices = get_devices()
 gateway = get_gateway()
 signals = get_signals()
 
-MQTT_HOST = mqtt_cfg['MQTT_HOST']
-MQTT_PORT = mqtt_cfg['MQTT_PORT']
-MQTT_USER = mqtt_cfg['MQTT_USER']
-MQTT_PASS = mqtt_cfg['MQTT_PASS']
+MQTT_HOST = cfg['MQTT_HOST']
+MQTT_PORT = cfg['MQTT_PORT']
+MQTT_USER = cfg['MQTT_USER']
+MQTT_PASS = cfg['MQTT_PASS']
 
 
 
@@ -80,9 +80,20 @@ class MqttGateway:
             return
         self.client.publish(topic, payload, qos=qos)
 
-    def send_signals(self, organization_id: str, gateway_id: str, device: dict):
+    def send_signals(self, organization_id: str, gateway_id: str, device: dict, value: int):
         topic = f"tenant/{organization_id}/gateway/{gateway_id}/device/{device['serialNumber']}/signal"
-        self._publish(topic, json.dumps(signals))
+
+        signals_to_send = [{
+            "serialNumber": "SN-1002",
+            "connectedAt": "2025-07-16T11:05:23Z",
+            "dataType": "BOOL",
+            "name": "Falla",
+            "address": "teest",
+            "signalType": "failure-indicator",
+            "value": value
+            }]
+        print("signals_to_send", signals_to_send)
+        self._publish(topic, json.dumps(signals_to_send))
         self.log(f"▶ Señales enviadas a {device['serialNumber']}")
 
     def send_device(self, organization_id: str, gateway_id: str, device: dict):
