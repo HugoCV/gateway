@@ -7,11 +7,11 @@ DEVICE_PORT = 5020        # puerto donde corre tu simulador
 
 # Crear cliente Modbus
 client = ModbusTcpClient(DEVICE_IP, port=DEVICE_PORT)
-print(f"🔌 Conectando a {DEVICE_IP}:{DEVICE_PORT} ...")
+print(f"Conectando a {DEVICE_IP}:{DEVICE_PORT} ...")
 
 if not client.connect():
     raise Exception(f"❌ No se pudo conectar al simulador en {DEVICE_IP}:{DEVICE_PORT}")
-print("✅ Conectado correctamente")
+print("Conectado correctamente")
 
 # --- Configurar frecuencia de referencia antes de arrancar ---
 freq_ref_hz = 5.00
@@ -54,4 +54,4 @@ for i in range(5):
 
 # Cerrar conexión
 client.close()
-print("🔌 Conexión cerrada")
+print("Conexión cerrada")

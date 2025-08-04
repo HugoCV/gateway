@@ -2,38 +2,64 @@ from pymodbus.server import StartTcpServer
 from pymodbus.datastore import ModbusSequentialDataBlock, ModbusSlaveContext, ModbusServerContext
 from threading import Thread
 import time
+import random
+from flask import Flask, jsonify
 
-# Registros simulados:
-# 0: estado (0=STOP, 1=RUN)
-# 1: frecuencia de referencia (Hz * 100)
-# 2: frecuencia actual (Hz * 100)
-# 3: corriente (A * 100)
-# 4: código de alarma (0=sin alarma)
-block = ModbusSequentialDataBlock(0, [0, 500, 0, 0, 0] + [0]*95)
-store = ModbusSlaveContext(hr=block)
+# —————— Configuración Modbus ——————
+block = ModbusSequentialDataBlock(0, [
+    1, 3703, 0, 0, 0,
+    30, 40, 1110, 1
+] + [0] * 91)
+store   = ModbusSlaveContext(hr=block)
 context = ModbusServerContext(slaves=store, single=True)
 
 def simulate_drive():
+    freq = speed = 0
+    # valores fijos iniciales
+    context[0].setValues(3, 1, [3703])
+    context[0].setValues(3, 5, [30])
+    context[0].setValues(3, 6, [40])
+    context[0].setValues(3, 7, [1110])
+    context[0].setValues(3, 8, [1])
     while True:
-        state = block.getValues(0, 1)[0]      
-        freq_ref = block.getValues(1, 1)[0]   
-        freq_actual = block.getValues(2, 1)[0] 
-        if state == 1:
-            if freq_actual < freq_ref:
-                freq_actual += 10
-            elif freq_actual > freq_ref:
-                freq_actual -= 10
+        stat      = block.getValues(0, 1)[0]
+        freq_ref  = block.getValues(1, 1)[0]
+        speed_ref = block.getValues(7, 1)[0]
+        # lógica de simulación
+        if stat == 1:
+            variation = random.randint(-100, 100)
+            target_freq = freq_ref + variation
+            freq += random.choice([random.randint(50,150), -random.randint(50,150)]) \
+                    if freq != target_freq else 0
+            target_speed = speed_ref + random.randint(-50, 50)
+            speed += random.choice([random.randint(10,30), -random.randint(10,30)]) \
+                     if speed != target_speed else 0
         else:
-            freq_actual = 0
+            freq = speed = 0
 
-        current = int(freq_actual / 20)
-        block.setValues(2, [freq_actual])  
-        block.setValues(3, [current])     
-
+        current = int((freq / 100) * random.uniform(0.5,1.2) * 10)
+        # actualizar registros
+        context[0].setValues(3, 2, [freq])
+        context[0].setValues(3, 3, [current])
+        context[0].setValues(3, 4, [speed])
         time.sleep(1)
 
-t = Thread(target=simulate_drive, daemon=True)
-t.start()
+# —————— Servidor HTTP (Flask) ——————
+app = Flask(__name__)
 
-print("✅ Variador simulado corriendo en Modbus TCP en puerto 5020")
-StartTcpServer(context, address=("localhost", 5020))
+@app.route('/status')
+def status():
+    # Leer algunos registros clave y devolverlos como JSON
+    regs = block.getValues(0, 9)  # lee los primeros 9 registros
+    keys = ['stat','freqRef','freq','current','speed','accTime','decTime','speedRef','dir']
+    return jsonify({k: v for k, v in zip(keys, regs)})
+
+def run_http():
+    app.run(host='0.0.0.0', port=8000, debug=False)
+
+# —————— Arranque de hilos ——————
+Thread(target=simulate_drive, daemon=True).start()
+Thread(target=run_http,        daemon=True).start()
+
+print("✅ Variador simulado en Modbus TCP en puerto 5020 y HTTP en puerto 8000")
+StartTcpServer(context, address=("0.0.0.0", 5020))

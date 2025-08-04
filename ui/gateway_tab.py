@@ -1,46 +1,59 @@
-# ui/gateway_tab.py
 import tkinter as tk
-from tkinter import messagebox
-from mqtt.mqtt_client import MQTT_HOST, MQTT_PORT
+from tkinter import ttk
+from infrastructure.mqtt.mqtt_client import MQTT_HOST, MQTT_PORT
 
 def build_gateway_tab(app, parent):
+    # === Estilo visual ===
+    style = ttk.Style()
+    style.theme_use('clam')
 
-    mqtt_frame = tk.LabelFrame(parent, text="Conexion", padx=10, pady=10)
-    mqtt_frame.pack(fill="x", padx=10, pady=10)
+    style.configure("TLabel", font=("Segoe UI", 10), foreground="#222")
+    style.configure("TEntry", font=("Segoe UI", 10), padding=5)
+    style.configure("TButton", font=("Segoe UI", 10), padding=6)
+    style.configure("TCombobox", font=("Segoe UI", 10))
 
-    tk.Label(mqtt_frame, text="Broker:").grid(row=0, column=0, sticky="e")
+    style.map("TButton",
+        background=[("active", "#d9d9d9"), ("pressed", "#c0c0c0")],
+        foreground=[("disabled", "#999")]
+    )
+
+    # === MQTT Frame ===
+    mqtt_frame = ttk.LabelFrame(parent, text="Conexión MQTT", padding=15)
+    mqtt_frame.pack(fill="x", padx=15, pady=(15, 10))
+
     app.broker_var = tk.StringVar(value=app.gateway_cfg.get("broker", MQTT_HOST))
-    tk.Entry(mqtt_frame, textvariable=app.broker_var).grid(row=0, column=1, sticky="we")
-
-    tk.Label(mqtt_frame, text="Puerto:").grid(row=0, column=2, sticky="e")
     app.port_var = tk.IntVar(value=app.gateway_cfg.get("port", MQTT_PORT))
-    tk.Entry(mqtt_frame, textvariable=app.port_var, width=6).grid(row=0, column=3)
 
-    tk.Button(mqtt_frame, text="Conectar", command=app._on_mqtt_connect).grid(row=0, column=4, padx=5)
+    ttk.Label(mqtt_frame, text="Broker:").grid(row=0, column=0, sticky="e", padx=5, pady=5)
+    ttk.Entry(mqtt_frame, textvariable=app.broker_var).grid(row=0, column=1, sticky="we", padx=5, pady=5)
+
+    ttk.Label(mqtt_frame, text="Puerto:").grid(row=0, column=2, sticky="e", padx=5, pady=5)
+    ttk.Entry(mqtt_frame, textvariable=app.port_var, width=6).grid(row=0, column=3, padx=5, pady=5)
+
+    ttk.Button(mqtt_frame, text="Conectar", command=app.controller.on_mqtt_connect).grid(row=0, column=4, padx=10)
+
     mqtt_frame.columnconfigure(1, weight=1)
 
-    # Let column 1 expand properly
-    mqtt_frame.columnconfigure(1, weight=1)
-
-    frm = tk.Frame(parent)
-    frm.pack(fill="x", padx=10, pady=5)
-
-    gw_frame = tk.LabelFrame(parent, text="Registrar", padx=10, pady=5)
-    gw_frame.pack(fill="x", padx=10, pady=5)
+    # === Registro de Gateway ===
+    gw_frame = ttk.LabelFrame(parent, text="🛰️ Registrar Gateway", padding=15)
+    gw_frame.pack(fill="x", padx=15, pady=(5, 10))
 
     app.gw_name_var = tk.StringVar(value=app.gateway_cfg.get("name", ""))
-    tk.Label(gw_frame, text="Nombre:").grid(row=0, column=0, sticky="e")
-    tk.Entry(gw_frame, textvariable=app.gw_name_var).grid(row=0, column=1, sticky="we")
-
     app.org_var = tk.StringVar(value=app.gateway_cfg.get("organizationId", ""))
-    tk.Label(gw_frame, text="Organizacion ID:").grid(row=1, column=0, sticky="e")
-    tk.Entry(gw_frame, textvariable=app.org_var).grid(row=1, column=1, sticky="we")
-
     app.loc_var = tk.StringVar(value=app.gateway_cfg.get("location", ""))
-    tk.Label(gw_frame, text="Ubicacion:").grid(row=2, column=0, sticky="e")
-    tk.Entry(gw_frame, textvariable=app.loc_var).grid(row=2, column=1, sticky="we")
 
-    tk.Button(
-        gw_frame, text="Registrar", command=app._on_send_gateway
-    ).grid(row=3, column=0, columnspan=2, pady=5)
+    fields = [
+        ("Nombre", app.gw_name_var),
+        ("Organización ID", app.org_var),
+        ("Ubicación", app.loc_var)
+    ]
+
+    for i, (label, var) in enumerate(fields):
+        ttk.Label(gw_frame, text=label + ":").grid(row=i, column=0, sticky="e", padx=5, pady=5)
+        ttk.Entry(gw_frame, textvariable=var).grid(row=i, column=1, sticky="we", padx=5, pady=5)
+
+    ttk.Button(gw_frame, text="Registrar", command=app.controller.on_send_gateway).grid(
+        row=len(fields), column=0, columnspan=2, pady=10
+    )
+
     gw_frame.columnconfigure(1, weight=1)

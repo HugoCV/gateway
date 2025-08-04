@@ -1,34 +1,27 @@
-[
-  {
-    "name": "Nueva Prueba",
-    "serialNumber": "SN-1001",
-    "model": "Altivar320",
-    "ip_address": "localhost",
-    "ip_port": "5020",
-    "connectedAt": "2025-07-16T11:05:23Z"
-  },
-  {
-    "name": "Bomba de Prueba test",
-    "serialNumber": "SN-1002",
-    "model": "Delta-VFD007EL43A",
-    "ip_address": "localhost",
-    "ip_port": "5020",
-    "connectedAt": "2025-07-16T11:05:23Z"
-  },
-  {
-    "name": "Test",
-    "serialNumber": "SN-1009",
-    "model": "Delta-VFD007EL43A",
-    "ip_address": "localhost",
-    "ip_port": "5020",
-    "connectedAt": "2025-07-16T11:05:23Z"
-  },
-  {
-    "name": "Nueva Prueba tester",
-    "serialNumber": "SN-1000",
-    "model": "Altivar320",
-    "ip_address": "localhost",
-    "ip_port": "5020",
-    "connectedAt": "2025-07-16T11:05:23Z"
-  }
+[{
+  "name": "Nueva Prueba test",
+  "serialNumber": "SN-1001",
+  "model": "Altivar320",
+  "ip_address": "localhost",
+  "ip_port": "5020",
+  "connectedAt": "2025-07-16T11:05:23Z"
+},
+
+{
+  "name": "Nueva Prueba",
+  "serialNumber": "SN-1002",
+  "model": "Altivar320",
+  "ip_address": "localhost",
+  "ip_port": "5020",
+  "connectedAt": "2025-07-16T11:05:23Z"
+},
+
+{
+  "name": "Nueva Prueba test",
+  "serialNumber": "SN-1003",
+  "model": "Altivar320",
+  "ip_address": "localhost",
+  "ip_port": "5020",
+  "connectedAt": "2025-07-16T11:05:23Z"
+}
 ]

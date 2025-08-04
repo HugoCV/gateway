@@ -1,87 +1,71 @@
-# ui/main_window.py
 import tkinter as tk
-from tkinter import scrolledtext, ttk, messagebox
-from mqtt.mqtt_client import MqttGateway
-from config.loader import get_gateway
-from .gateway_tab import build_gateway_tab
-from .device_tab import build_device_tab
-from drivers.modbus_tcp import ModbusTcp 
+from tkinter import ttk, scrolledtext
+from application.app_controller import AppController
+from infrastructure.mqtt.mqtt_client import MqttClient
+# from infrastructure.modbus.modbus_tcp import ModbusTcp
+# from infrastructure.http.http_client import HttpClient
+from infrastructure.config.loader import get_gateway
+from ui.gateway_tab import build_gateway_tab
+from ui.device_tab import build_device_tab
 
-class App(tk.Tk):
+class MainWindow(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("Puerta de enlace")
-        self.geometry("1000x700")
+        self.geometry("1000x1000")
+
+        self.style = ttk.Style()
+        self.style.theme_use("clam")
+        self.style.configure("TLabel", font=("Segoe UI", 10), foreground="#222")
+        self.style.configure("TEntry", font=("Segoe UI", 10), padding=5)
+        self.style.configure("TButton", font=("Segoe UI", 10), padding=6)
+        self.style.configure("TCombobox", font=("Segoe UI", 10))
+        self.style.map("TButton",
+            background=[("active", "#d9d9d9"), ("pressed", "#c0c0c0")],
+            foreground=[("disabled", "#999")]
+        )
 
         self.gateway_cfg = get_gateway()
-        self.device_client = None
-        self.modbus_handler = ModbusTcp(self)
+
+        self.controller = AppController(self)
 
         self._build_ui()
-        self.gateway = MqttGateway(self._log)
+        self.log_widget = self._build_log_widget()
+
+        self._setup_gateway()
 
     def _build_ui(self):
         notebook = ttk.Notebook(self)
         notebook.pack(fill="both", expand=True)
 
-        tab_gateway = tk.Frame(notebook)
-        notebook.add(tab_gateway, text="Puerta de enlace")
+        tab_gateway = ttk.Frame(notebook)
+        notebook.add(tab_gateway, text="Gateway")
         build_gateway_tab(self, tab_gateway)
 
-        tab_devices = tk.Frame(notebook)
+        tab_devices = ttk.Frame(notebook)
         notebook.add(tab_devices, text="Dispositivos")
         build_device_tab(self, tab_devices)
 
-        self.log_widget = scrolledtext.ScrolledText(self, state="disabled", height=8)
-        self.log_widget.pack(fill="both", padx=10, pady=5, expand=True)
+    def _build_log_widget(self):
+        widget = scrolledtext.ScrolledText(self, state="disabled", height=8)
+        widget.pack(fill="x", padx=15, pady=(5, 15))
+        return widget
 
-    # Los handlers MQTT y guardar dispositivo se quedan aquí
-    def _log(self, msg):
+    def _log(self, message):
         self.log_widget.configure(state="normal")
-        self.log_widget.insert("end", msg + "\n")
+        self.log_widget.insert("end", message + "\n")
         self.log_widget.configure(state="disabled")
         self.log_widget.yview("end")
 
-    def _on_mqtt_connect(self):
-        broker = self.broker_var.get().strip()
-        port = self.port_var.get()
-        if not broker:
-            return messagebox.showwarning("Error", "You must enter a broker.")
-        self.gateway.connect(broker, port)
-
-    def _on_send_gateway(self):
-        name = self.gw_name_var.get().strip()
-        org = self.org_var.get().strip()
-        loc = self.loc_var.get().strip()
-        if not all([name, org, loc]):
-            return messagebox.showwarning("Missing data", "Complete all gateway fields.")
-        self.gateway.send_gateway(name, org, loc)
-
-    def _on_save_device(self):
-        key = self.selected_device_var.get()
-        if not key:
-            return self._log("⚠ Select a device first.")
-        for d in self.available_devices:
-            if d["name"] == key:
-                d["name"] = self.device_name_var.get().strip()
-                d["serialNumber"] = self.serial_var.get().strip()
-                d["model"] = self.model_var.get().strip()
-                d["ip_address"] = self.device_ip.get().strip()
-                d["ip_port"] = self.device_port.get().strip()
-                break
-        self.gateway.save_device(
-            self.gateway_cfg.get("organizationId"),
-            self.gateway_cfg.get("gatewayId"),
-            d
+    def _setup_gateway(self):
+        self.mqtt_client = MqttClient(
+            self._log,
+            self.controller.modbus_handler.stop,
+            self.controller.modbus_handler.start,
+            self.controller.modbus_handler.reset
         )
-        self._log(f"💾 Device '{d['name']}' saved successfully.")
-    def _on_connect_device(self):
-        device_ip = self.device_ip.get().strip()
-        port = self.device_port.get()
-        self.modbus_handler.connect_device(device_ip, port)
+        self.controller.set_mqtt_client(self.mqtt_client)
 
-    def _on_start_device(self):
-        self.modbus_handler.start()
-
-    def _on_stop_device(self):
-        self.modbus_handler.stop()
+if __name__ == "__main__":
+    app = MainWindow()
+    app.mainloop()
