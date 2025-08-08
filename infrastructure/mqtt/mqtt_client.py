@@ -2,13 +2,13 @@ import json
 import os
 import threading
 import ssl
+import time
 from datetime import datetime
 import certifi
 from paho.mqtt import client as mqtt
-from paho.mqtt.client import CallbackAPIVersion
 from bson import ObjectId
 from bson.errors import InvalidId
-from infrastructure.config.loader import load_config, save_gateway, save_devices, get_gateway
+from infrastructure.config.loader import load_config, get_gateway
 
 cfg = load_config()
 
@@ -29,6 +29,7 @@ class MqttClient:
         self.start_device = start_callback
         self.reset_device = reset_callback
         self.client = None
+        self._connected_evt = threading.Event()
         self._log_initial_config()
 
     def _log_initial_config(self):
@@ -40,7 +41,6 @@ class MqttClient:
             self.client = mqtt.Client(
                 client_id=f"gateway_py_{gateway.get('gatewayId')}",
                 protocol=mqtt.MQTTv5,
-                callback_api_version=CallbackAPIVersion.VERSION2
             )
             if MQTT_USER and MQTT_PASS:
                 self.client.username_pw_set(MQTT_USER, MQTT_PASS)
@@ -69,15 +69,14 @@ class MqttClient:
 
     def on_connect(self, client, userdata, flags, rc, properties=None):
         self.log(f"✅ Conectado (rc={rc})")
-
         org_id = gateway.get('organizationId')
-        gw_id = gateway.get('gatewayId')
-
-        # Escuchar cualquier comando para este gateway (todos los dispositivos)
-        command_topic = f"tenant/{org_id}/gateway/{gw_id}/device/+/command"
-        client.subscribe(command_topic, qos=1)
-        print(f"📡 Suscrito a todos los comandos: {command_topic}")
-        self.log(f"📡 Suscrito a todos los comandos: {command_topic}")
+        gw_id  = gateway.get('gatewayId')
+        topic  = f"tenant/{org_id}/gateway/{gw_id}/device/+/command"
+        client.subscribe(topic, qos=1)
+        self.client = client
+        print(self)
+        print("client", client)
+        self.log(f"📡 Suscrito a todos los comandos: {topic}")
 
     def on_disconnect(self, client, userdata, flags, rc, properties=None):
         self.log(f"⚠️ Desconectado (rc={rc})")
@@ -93,9 +92,9 @@ class MqttClient:
         self.client.publish(topic, payload, qos=qos)
 
     def on_message(self, client, userdata, msg):
+        print("llega a on message")
         topic = msg.topic
         payload = msg.payload.decode('utf-8')
-        print(payload)
         try:
             cmd = json.loads(payload)  # convierte el JSON en dict
             # Acceder correctamente al valor
@@ -121,8 +120,9 @@ class MqttClient:
     def save_device(self, organization_id: str, gateway_id: str, device: dict):
         topic = f"tenant/{organization_id}/gateway/{gateway_id}/device/{device['serialNumber']}/device"
         payload = json.dumps(device)
-        save_devices(device)
         self._publish(topic, payload)
+        print(topic)
+        print(payload)
         self.log(f"▶ Dispositivo {device['serialNumber']} enviado")
 
     def is_valid_objectid(self, v: str) -> bool:
@@ -132,16 +132,86 @@ class MqttClient:
         except Exception:
             return False
 
-    def send_gateway(self, name: str, org_id: str, loc: str):
-        # Genera o valida gatewayId
-        gw_id = gateway.get('gatewayId')
+    def send_gateway(self):
+        name = "test"
+        loc = "test"
+        print("self.client", self.client)
+        print(self)
+
+        # 2) Preparar datos
+        org_id = gateway.get('organizationId')
+        gw_id  = gateway.get('gatewayId')
         if not self.is_valid_objectid(gw_id):
             gw_id = str(ObjectId())
-        data = {"name": name, "organizationId": org_id, "location": loc, "gatewayId": gw_id}
-        topic = f"tenant/{org_id}/gateway/register/request"
-        self._publish(topic, json.dumps({**data, "timestamp": datetime.utcnow().isoformat()}), qos=1)
-        save_gateway(data)
-        self.log(f"▶ Solicitud de registro publicada: {topic}")
+
+        data = {
+            "name":           name,
+            "organizationId": org_id,
+            "location":       loc,
+            "gatewayId":      gw_id
+        }
+
+        # 3) Construir topic y payload
+        topic   = f"tenant/{org_id}/gateway/register/request"
+        payload = json.dumps({**data, "timestamp": datetime.utcnow().isoformat()})
+
+        # 4) Publicar y esperar ACK
+        info = self.client.publish(topic, payload, qos=1)
+        info.wait_for_publish()  # bloquea hasta recibir PUBACK
+
+        # 5) Comprobar resultado
+        if info.rc == mqtt.MQTT_ERR_SUCCESS:
+            self.log(f"▶ Solicitud de registro enviada a {topic} (mid={info.mid})")
+        else:
+            self.log(f"❌ Falló publish() rc={info.rc}")
+
+
+
+    def request_gateway_config(self, timeout: float = 5.0) -> dict[str, any] | None:
+        """
+        Publish a gateway-config request over MQTT and wait for the response.
+
+        :param timeout: Maximum seconds to wait for the response.
+        :return: Parsed gateway config dict, or None if timed out or on error.
+        """
+        # Build topics based on current gateway info
+        org_id = gateway.get('organizationId')
+        gw_id  = gateway.get('gatewayId')
+        req_topic  = f"tenant/{org_id}/gateway/{gw_id}/config/request"
+        resp_topic = f"tenant/{org_id}/gateway/{gw_id}/config/response"
+
+        response: dict[str, any] = {}
+        received = threading.Event()
+
+        # Temporary callback to capture the first response
+        def _on_config_response(client, userdata, msg):
+            try:
+                payload = msg.payload.decode('utf-8')
+                response.update(json.loads(payload))
+            except Exception:
+                pass
+            finally:
+                received.set()
+
+        # Subscribe and add callback
+        self.client.subscribe(resp_topic, qos=1)
+        self.client.message_callback_add(resp_topic, _on_config_response)
+
+        # Publish the config request
+        payload = json.dumps({"timestamp": time.time()})
+        self.client.publish(req_topic, payload, qos=1)
+        self.log(f"▶ Gateway config request published to {req_topic}")
+
+        # Wait for response or timeout
+        if not received.wait(timeout):
+            self.log(f"⚠️ No gateway config received within {timeout}s.")
+            result = None
+        else:
+            result = response
+
+        # Clean up callback
+        self.client.message_callback_remove(resp_topic)
+        return result
 
 
         

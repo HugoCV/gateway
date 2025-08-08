@@ -5,34 +5,70 @@ from pymodbus.client import ModbusTcpClient
 from tkinter import messagebox
 
 class ModbusTcp:
-    def __init__(self, app):
+    def __init__(self, app, log):
         self.app = app
         self.client = None
+        self.log = log
 
-    def connect_device(self, ip, port):
-        self.client = ModbusTcpClient(ip, port=port)
-        if not self.client.connect():
-            messagebox.showerror("Error", f"No se pudo conectar a {ip}:{port}")
+    def connect(self, ip, port) -> bool:
+        self.log(f"🔌 Iniciando conexión {ip}:{port}")
+        try:
+            port = int(port)
+
+            # Cierra cliente previo si existía
+            if getattr(self, "client", None):
+                try:
+                    self.client.close()
+                except Exception:
+                    pass
+                self.client = None
+
+            self.client = ModbusTcpClient(host=ip, port=port, timeout=3.0)
+
+            if not self.client.connect():
+                self.log(f"❌ No se pudo conectar a {ip}:{port}")
+                try:
+                    self.client.close()
+                except Exception:
+                    pass
+                self.client = None
+                return False
+
+            self.log(f"✅ Conectado a {ip}:{port}")
+
+            # Prueba de escritura (opcional)
+            rr = self.client.write_register(address=4358, value=4)
+            if rr is None or rr.isError():
+                self.log("⚠️ Conectado, pero falló write_register(4358, 2)")
+            else:
+                self.log("📝 write_register(4358, 2) OK")
+
+            return True
+
+        except Exception as e:
+            self.log(f"❌ Error conectando a {ip}:{port}: {e}")
+            try:
+                if self.client:
+                    self.client.close()
+            except Exception:
+                pass
             self.client = None
-            return
-        print(f"✅ Conectado a {ip}:{port}")
-        self.remoto = self.client.write_register(address=4358, value=4)
-        self.start_continuous_read()
+            return False
+        
 
     def start(self):
-        print("start")
         if self.client:
             result = self.client.write_register(address=898, value=3)
-            print("resultado", result)
+            self.log(f"resultado {result}")
             if not result.isError() and not result.isError():
-                print("✔ Comando enviado: RUN")
+                self.log("✔ Comando enviado: RUN")
 
     def stop(self):
         if self.client:
             result = self.client.write_register(address=898, value=0)
-            print("resultado", result)
+            self.log(f"resultado {result}")
             if not result.isError() and not result.isError():
-                print("✔ Comando enviado: STOP")
+                self.log("✔ Comando enviado: STOP")
     
     def reset(self):
         if self.client:
@@ -41,12 +77,15 @@ class ModbusTcp:
             result3 = self.client.write_register(address=898, value=2)
             
             if not result1.isError() and not result2.isError() and not result3.isError():
-                print("✔ Comando enviado: RESET")
+                self.log("✔ Comando enviado: RESET")
 
     def set_local(self):
         self.remoto = self.client.write_register(address=4358, value=2)
     def set_remote(self):
         self.remoto = self.client.write_register(address=4358, value=4)
+        
+    def write_register(self, address: int, value: int):
+        self.client.write_register(address=address, value=value)
     def start_continuous_read(self):
         def read_loop():
             while True:

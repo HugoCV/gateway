@@ -21,11 +21,11 @@ def build_gateway_tab(app, parent):
     mqtt_frame = ttk.LabelFrame(parent, text="Conexión MQTT", padding=15)
     mqtt_frame.pack(fill="x", padx=15, pady=(15, 10))
 
-    app.broker_var = tk.StringVar(value=app.gateway_cfg.get("broker", MQTT_HOST))
+    app.mqtt_host = tk.StringVar(value=app.gateway_cfg.get("broker", MQTT_HOST))
     app.port_var = tk.IntVar(value=app.gateway_cfg.get("port", MQTT_PORT))
 
     ttk.Label(mqtt_frame, text="Broker:").grid(row=0, column=0, sticky="e", padx=5, pady=5)
-    ttk.Entry(mqtt_frame, textvariable=app.broker_var).grid(row=0, column=1, sticky="we", padx=5, pady=5)
+    ttk.Entry(mqtt_frame, textvariable=app.mqtt_host).grid(row=0, column=1, sticky="we", padx=5, pady=5)
 
     ttk.Label(mqtt_frame, text="Puerto:").grid(row=0, column=2, sticky="e", padx=5, pady=5)
     ttk.Entry(mqtt_frame, textvariable=app.port_var, width=6).grid(row=0, column=3, padx=5, pady=5)
@@ -35,24 +35,24 @@ def build_gateway_tab(app, parent):
     mqtt_frame.columnconfigure(1, weight=1)
 
     # === Registro de Gateway ===
-    gw_frame = ttk.LabelFrame(parent, text="🛰️ Registrar Gateway", padding=15)
+    gw_frame = ttk.LabelFrame(parent, text="Puerta de enlace", padding=15)
     gw_frame.pack(fill="x", padx=15, pady=(5, 10))
 
-    app.gw_name_var = tk.StringVar(value=app.gateway_cfg.get("name", ""))
-    app.org_var = tk.StringVar(value=app.gateway_cfg.get("organizationId", ""))
-    app.loc_var = tk.StringVar(value=app.gateway_cfg.get("location", ""))
+    app.controller.gw_name_var = tk.StringVar(value=app.gateway_cfg.get("name", ""))
+    app.controller.org_var = tk.StringVar(value=app.gateway_cfg.get("organizationId", ""))
+    app.controller.loc_var = tk.StringVar(value=app.gateway_cfg.get("location", ""))
 
     fields = [
-        ("Nombre", app.gw_name_var),
-        ("Organización ID", app.org_var),
-        ("Ubicación", app.loc_var)
+        ("Nombre", app.controller.gw_name_var),
+        ("Organización ID", app.controller.org_var),
+        ("Ubicación", app.controller.loc_var)
     ]
 
     for i, (label, var) in enumerate(fields):
         ttk.Label(gw_frame, text=label + ":").grid(row=i, column=0, sticky="e", padx=5, pady=5)
         ttk.Entry(gw_frame, textvariable=var).grid(row=i, column=1, sticky="we", padx=5, pady=5)
 
-    ttk.Button(gw_frame, text="Registrar", command=app.controller.on_send_gateway).grid(
+    ttk.Button(gw_frame, text="Actualizar", command=app.controller.on_load_gateway).grid(
         row=len(fields), column=0, columnspan=2, pady=10
     )
 
