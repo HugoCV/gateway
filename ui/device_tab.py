@@ -62,9 +62,28 @@ def build_device_tab(app, parent):
     ttk.Entry(http_frame, textvariable=app.http_port_var).grid(row=1, column=1, sticky="we", padx=5, pady=5)
 
     http_frame.columnconfigure(1, weight=1)
+
     http_btn_frame = ttk.Frame(http_frame)
-    http_btn_frame.grid(row=2, column=0, columnspan=2, pady=(10, 0))
-    ttk.Button(http_btn_frame, text="Conectar", command=app.controller.on_connect_http, style="Http.TButton").pack()
+    http_btn_frame.grid(row=3, column=0, columnspan=2, pady=(10, 5), sticky="we")
+    wrap = 3
+
+    for c in range(wrap):
+        http_btn_frame.columnconfigure(c, weight=1)
+
+    http_buttons = [
+        ("Conectar", app.controller.on_connect_http),
+        ("Iniciar",  app.controller.on_read_http),
+        ("Leer Historial", app.controller.on_read_http_history),
+    ]
+    for idx, (text, cmd) in enumerate(http_buttons):
+        r = idx // wrap
+        c = idx % wrap
+        ttk.Button(
+            http_btn_frame,
+            text=text,
+            command=cmd
+        ).grid(row=r, column=c, padx=5, pady=5, sticky="we")
+
 
     # Modbus Serial Section
     modbus_serial_frame = ttk.LabelFrame(parent, text="Modbus Serial (RS-485)", padding=15)

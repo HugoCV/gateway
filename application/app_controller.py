@@ -6,7 +6,6 @@ from infrastructure.logo.logo_client import LogoModbusClient
 from infrastructure.modbus.modbus_serial import ModbusSerial
 from infrastructure.modbus.modbus_tcp import ModbusTcp
 from infrastructure.mqtt.mqtt_client import MqttClient
-from infrastructure.mqtt.mqtt_client import MQTT_HOST, MQTT_PORT
 
 
 class AppController:
@@ -32,15 +31,23 @@ class AppController:
             self.on_logo_read_callback
         )
         self.available_devices = []
-        self.mqtt_client = MqttClient(
+        self.mqtt_handler = MqttClient(
             log_callback=self.window._log,
             stop_callback=self.modbus_tcp_handler.stop,
             start_callback=self.modbus_tcp_handler.start,
             reset_callback=self.modbus_tcp_handler.reset,
         )
 
+        self.http_handler = HttpClient(
+                self,
+                self.on_http_read_callback,
+                self.window._log,
+            )
+        
+        self.selected_device_handler = None
+
         self.load_devices()
-        self.gateway_manager = GatewayManager(self.mqtt_client)
+        self.gateway_manager = GatewayManager(self.mqtt_handler, self.window._log)
         self.signal_modbus_serial_dir = {
             "freqRef": 4,
             "accTime": 6,
@@ -85,23 +92,18 @@ class AppController:
         Evento al actualizar gateway (pendiente de implementación).
         Valida campos y actualiza mediante GatewayManager.
         """
-        gateway = self.gateway_manager._load_gateway()
-        print(gateway)
+        self.gateway_manager._load_gateway()
 
     # === MQTT ===
 
-    def on_mqtt_connect(self):
+    def on_connect_mqtt(self):
         """Conecta al broker MQTT configurado en la interfaz."""
         broker = self.window.mqtt_host.get().strip()
         port = self.window.port_var.get()
         if not broker:
             messagebox.showwarning("Error", "Debes ingresar un broker.")
             return
-        self.mqtt_client.connect(broker, port)
-
-    def set_mqtt_client(self, mqtt_client):
-        """Inyecta un cliente MQTT externo al controlador."""
-        self.mqtt_client = mqtt_client
+        self.mqtt_handler.connect(broker, port)
 
     # === Devices ===
 
@@ -133,20 +135,6 @@ class AppController:
             return
 
         self.update_device_fields(device)
-        ip = device.get("http_ip", "").strip()
-        port = device.get("http_port", "").strip()
-        if not port:
-            port = device.get("ip_port", "").strip()
-
-        if ip and port:
-            base_url = f"http://{ip}:{port}/api/dashboard"
-            self.window.http_client = HttpClient(
-                self.window,
-                base_url=base_url,
-            )
-            self.window._log(f"🌐 HTTPClient configurado con: {base_url}")
-        else:
-            self.window._log("⚠️ IP o puerto HTTP no definidos.")
 
     def update_device_fields(self, device):
         """
@@ -197,7 +185,7 @@ class AppController:
         })
 
         # Envía por MQTT y actualiza lista
-        self.mqtt_client.save_device(
+        self.mqtt_handler.save_device(
             self.gateway_cfg.get("organizationId"),
             self.gateway_cfg.get("gatewayId"),
             device,
@@ -232,8 +220,70 @@ class AppController:
 
     def on_connect_http(self):
         """Evento placeholder para conexión HTTP."""
-        self.window._log("🌐 HTTP Client: Connect presionado.")
+        ip = self.window.http_ip_var.get()
+        port = self.window.http_port_var.get()
+        if ip and port:
+            base_url = f"http://{ip}:{port}/api/dashboard"
+            self.http_handler.connect(base_url=base_url, interval=5)
+            fault_history = self.http_handler.read_fault_history_sync()
+            self._handle_http_results(fault_history[0], "history")
+            self.http_handler.start_continuous_read()
+            
+            self.window._log(f"🌐 HTTPClient conectado a: {base_url}")
+            
+        else:
+            self.window._log("⚠️ IP o puerto HTTP no definidos.")
 
+    def on_http_read_callback(self, results: dict) -> None:
+        """Callback invocado desde HttpClient (posible hilo/loop async)."""
+        # Pasa el manejo al hilo principal de Tkinter
+        self.window.after(0, lambda: self._handle_http_results(results, "drive"))
+
+    def _handle_http_results(self, results: dict, group: str) -> None:
+        """Ya en el hilo principal: leer UI, formar topic y enviar MQTT."""
+        try:
+            
+            if not isinstance(results, dict) or not results:
+                self.window._log("⚠️ HTTP results vacío o no es dict; no se envía MQTT.")
+                return
+            serial = (self.window.serial_var.get() or "").strip()
+            if not serial:
+                self.window._log("⚠️ Serial vacío; se omite envío MQTT.")
+                return
+
+            topic_info = {
+                "serial_number":  serial,
+                "organization_id": self.gateway_cfg.get("organization_id") or self.gateway_cfg.get("organizationId"),
+                "gateway_id":      self.gateway_cfg.get("gateway_id")      or self.gateway_cfg.get("gatewayId"),
+            }
+
+            if not topic_info["organization_id"] or not topic_info["gateway_id"]:
+                self.window._log(f"⚠️ Faltan IDs en gateway_cfg: {topic_info}")
+                return
+            
+            signal = {
+                "group": group,
+                "payload": results
+            }
+            
+            self.mqtt_handler.send_signal(topic_info, signal)
+            # self._log(f"📤 Enviado MQTT: {topic_info}")
+        except Exception as e:
+            self.window._log(f"❌ on_http_read_callback error: {e}")
+
+    def on_read_http(self):
+        print("on_read_http")
+
+    def on_read_http_history(self):
+        """
+        Llamada síncrona desde Tkinter que agenda la corrutina en el loop async
+        y devuelve el resultado.
+        """
+        fault_history = self.http_handler.read_fault_history_sync()
+        if fault_history:
+            self.window._log(f"Historial recibido: {fault_history}")
+        else:
+            self.window._log("No se pudo obtener el historial.")
     # === Modbus Serial ===
 
     def on_connect_modbus_serial(self):
@@ -244,6 +294,8 @@ class AppController:
             baudrate=self.window.baudrate_var.get(),
             slave_id=self.window.slave_id_var.get(),
         )
+        self.selected_device_handler = self.modbus_serial_handler
+
 
     def on_set_remote_serial(self):
         self.modbus_serial_handler.write_register(address=4358, value=2)
@@ -313,6 +365,7 @@ class AppController:
             return
 
         self.modbus_tcp_handler.connect(ip, port)
+        self.selected_device_handler = self.modbus_tcp_handler
 
     def on_start_modbus_tcp(self):
         """Detiene servidor Modbus TCP."""
@@ -382,6 +435,7 @@ class AppController:
             host=self.window.logo_ip_var.get(),
             port=self.window.logo_port_var.get(),
         )
+        self.selected_device_handler = self.logo_handler
     def on_write_logo(self):
         self.logo_handler.write_single_register(1, 10)
 

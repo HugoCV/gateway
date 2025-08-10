@@ -1,124 +1,96 @@
-import asyncio
-import threading
-import aiohttp
-
+import asyncio, threading, aiohttp
+from typing import Optional
 
 class HttpClient:
-    """
-    Asynchronous HTTP client that polls configured endpoints and forwards a combined payload.
-    """
-
-    def __init__(self, app, base_url: str, interval: int = 5):
-        """
-        Initialize HttpClient.
-
-        :param app: Application instance for logging and sending signals
-        :param base_url: Base URL for HTTP API
-        :param interval: Polling interval in seconds
-        """
+    def __init__(self, app,  on_http_read_callback, log):
         self.app = app
+        self.log = log
+        self.on_http_read_callback = on_http_read_callback
+        self.running = False
+        self.loop: Optional[asyncio.AbstractEventLoop] = None
+        self._loop_thread: Optional[threading.Thread] = None
+        self._session: Optional[aiohttp.ClientSession] = None
+
+
+
+    # === loop & session ===
+    def _start_loop(self):
+        if self.loop: return
+        self.loop = asyncio.new_event_loop()
+        self._loop_thread = threading.Thread(
+            target=lambda: (asyncio.set_event_loop(self.loop), self.loop.run_forever()),
+            daemon=True
+        )
+        self._loop_thread.start()
+
+    async def _ensure_session(self):
+        if self._session is None or self._session.closed:
+            self._session = aiohttp.ClientSession()
+        return self._session
+
+    async def _close(self):
+        if self._session and not self._session.closed:
+            await self._session.close()
+
+    # === public api ===
+
+    def connect(self, base_url: str, interval: int = 1):
         self.base_url = base_url.rstrip('/')
         self.interval = interval
-        self.running = False
-        self.loop = None
-
-        # Configure the endpoints to poll
         self.endpoints = {
             'drive': f'{self.base_url}/drive/stat',
             'mntr': f'{self.base_url}/mntr/stat',
-            'dashboard': f'{self.base_url}/stat'
+            'dashboard': f'{self.base_url}/stat',
         }
+        self.faultEndpoint = f'{self.base_url}/evt/lst'
 
-    def start_continuous_read(self, interval: int = None) -> None:
-        """
-        Start asynchronous polling of HTTP endpoints.
-
-        :param interval: Optional override interval in seconds
-        """
+    def start_continuous_read(self, interval: int | None = None) -> None:
         if interval is not None:
             self.interval = interval
-
         if self.running:
             self.app._log('⚠️ HTTP polling already running.')
             return
-
         self.running = True
-        # Create and start an asyncio loop in a new thread
-        self.loop = asyncio.new_event_loop()
-        thread = threading.Thread(target=self._run_loop, daemon=True)
-        thread.start()
-        self.app._log(f'🔁 Async HTTP polling started with interval {self.interval}s.')
+        self._start_loop()
+        asyncio.run_coroutine_threadsafe(self._poll_loop(), self.loop)
 
     def stop_continuous_read(self) -> None:
-        """
-        Stop the asynchronous polling loop.
-        """
         if not self.running:
             self.app._log('⚠️ HTTP polling is not running.')
             return
-
         self.running = False
+        fut = asyncio.run_coroutine_threadsafe(self._close(), self.loop)
+        fut.result(timeout=3)
         self.app._log('⏹️ Async HTTP polling stopped.')
 
-    def _run_loop(self) -> None:
-        """
-        Internal method to set up and run the asyncio event loop.
-        """
-        asyncio.set_event_loop(self.loop)
-        self.loop.run_until_complete(self._poll_loop())
-        self.loop.close()
+    async def read_fault_history(self) -> dict | None:
+        session = await self._ensure_session()
+        return await self._fetch(session, self.faultEndpoint)
+
+    def read_fault_history_sync(self) -> dict | None:
+        self._start_loop()
+        fut = asyncio.run_coroutine_threadsafe(self.read_fault_history(), self.loop)
+        return fut.result(timeout=5)
 
     async def _poll_loop(self) -> None:
-        """
-        Coroutine that polls all endpoints and sends a single combined payload.
-        """
-        async with aiohttp.ClientSession() as session:
-            while self.running:
-                combined_data = {}
-                for name, url in self.endpoints.items():
-                    data = await self._fetch(session, url)
-                    if data is not None:
-                        combined_data[name] = data
-                if combined_data:
-                    self._send_signal(combined_data)
-                await asyncio.sleep(self.interval)
+        session = await self._ensure_session()
+        while self.running:
+            combined = {}
+            for _, url in self.endpoints.items():
+                data = await self._fetch(session, url)
+                if isinstance(data, dict):
+                    combined.update(data)
+            if combined:
+                self.on_http_read_callback(combined)
+            await asyncio.sleep(self.interval)
 
-    async def _fetch(self, session: aiohttp.ClientSession, url: str) -> dict:
-        """
-        Perform an asynchronous GET request and return JSON response.
 
-        :param session: aiohttp ClientSession
-        :param url: Full URL to fetch
-        :return: Parsed JSON data or None on error
-        """
+    async def _fetch(self, session: aiohttp.ClientSession, url: str) -> dict | None:
         try:
             async with session.get(url, timeout=3) as response:
                 if response.status == 200:
                     return await response.json()
-                self.app._log(f'⚠️ HTTP error {response.status} reading {url}')
+                self.app._log(f'⚠️ HTTP {response.status} {url}')
         except Exception as e:
-            self.app._log(f'❌ Async HTTP exception for {url}: {e}')
+            self.app._log(f'❌ HTTP exception {url}: {e}')
         return None
-
-    def _send_signal(self, payload: dict) -> None:
-        """
-        Send a combined payload via the application's MQTT client.
-
-        :param payload: Dictionary containing data from all endpoints
-        """
-        try:
-            device_serial = self.app.serial_var.get().strip()
-            gateway_id = self.app.gateway_cfg.get('gatewayId')
-            organization_id = self.app.gateway_cfg.get('organizationId')
-
-            topic_info = {
-                'gateway_id': gateway_id,
-                'organization_id': organization_id,
-                'serial_number': device_serial
-            }
-
-            # Delegate to the application's gateway
-            self.app.gateway.send_signal(topic_info, payload)
-            self.app._log(f'📤 HTTP combined payload sent for serial {device_serial}')
-        except Exception as e:
-            self.app._log(f'❌ Error sending HTTP signal: {e}')

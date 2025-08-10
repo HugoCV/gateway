@@ -30,7 +30,7 @@ def build_gateway_tab(app, parent):
     ttk.Label(mqtt_frame, text="Puerto:").grid(row=0, column=2, sticky="e", padx=5, pady=5)
     ttk.Entry(mqtt_frame, textvariable=app.port_var, width=6).grid(row=0, column=3, padx=5, pady=5)
 
-    ttk.Button(mqtt_frame, text="Conectar", command=app.controller.on_mqtt_connect).grid(row=0, column=4, padx=10)
+    ttk.Button(mqtt_frame, text="Conectar", command=app.controller.on_connect_mqtt).grid(row=0, column=4, padx=10)
 
     mqtt_frame.columnconfigure(1, weight=1)
 
