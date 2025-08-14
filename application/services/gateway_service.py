@@ -65,16 +65,3 @@ class GatewayService:
         return gateway
 
 
-    def delete_gateway(self, gateway_id: str) -> bool:
-        """
-        Delete a gateway by ID and persist the change.
-
-        :param gateway_id: The unique ID of the gateway to remove
-        :return: True if deletion succeeded, False otherwise
-        """
-        deleted = self.gateway_manager.delete_gateway(gateway_id)
-        if deleted:
-            self.log(f"🗑️ Gateway '{gateway_id}' deleted.")
-        else:
-            self.log(f"⚠️ Gateway '{gateway_id}' not found.")
-        return deleted

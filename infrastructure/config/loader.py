@@ -13,8 +13,6 @@ GATEWAY_FILE = os.path.join(DATA_DIR, "gateway.json")
 
 
 # === Internal caches for lazy loading ===
-_signals_cache = None
-_devices_cache = None
 _gateway_cache = None
 
 
@@ -73,35 +71,6 @@ def _save_json(path: str, data):
     with open(path, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2, ensure_ascii=False)
     print(f"💾 Saved data to {path}")
-
-
-# -----------------------------
-# Devices
-# -----------------------------
-def get_devices():
-    """Return a copy of devices list (lazy-loaded from devices.json)."""
-    global _devices_cache
-    if _devices_cache is None:
-        _devices_cache = _load_json(DEVICES_FILE, [])
-    return list(_devices_cache)
-
-
-def save_devices(devices: list):
-    """Save full devices list to devices.json and update cache."""
-    global _devices_cache
-    _save_json(DEVICES_FILE, devices)
-    _devices_cache = list(devices)
-
-
-# -----------------------------
-# Signals
-# -----------------------------
-def get_signals():
-    """Return a copy of signals list (lazy-loaded from signals.json)."""
-    global _signals_cache
-    if _signals_cache is None:
-        _signals_cache = _load_json(SIGNALS_FILE, [])
-    return list(_signals_cache)
 
 
 # -----------------------------

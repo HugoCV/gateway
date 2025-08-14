@@ -13,8 +13,6 @@ def build_device_tab(app, parent):
               background=[("active", "#d9d9d9"), ("pressed", "#c0c0c0")],
               foreground=[("disabled", "#999")])
 
-    app.controller.load_devices()
-
     # Configure parent grid for 2 columns
     parent.columnconfigure(0, weight=1)
     parent.columnconfigure(1, weight=1)
@@ -43,10 +41,6 @@ def build_device_tab(app, parent):
             app.device_combo.bind("<<ComboboxSelected>>", app.controller.on_select_device)
 
     device_frame.columnconfigure(1, weight=1)
-
-    save_btn_frame = ttk.Frame(device_frame)
-    save_btn_frame.grid(row=len(fields), column=0, columnspan=2, pady=(10, 0))
-    ttk.Button(save_btn_frame, text="Save", command=app.controller.on_save_device).pack()
 
     # HTTP Client Section
     http_frame = ttk.LabelFrame(parent, text="HTTP Client", padding=15, style="Http.TLabel", relief="solid")
@@ -193,4 +187,4 @@ def build_device_tab(app, parent):
     
 
     # Fill combobox with devices
-    app.controller.refresh_device_list()
+    # app.controller.refresh_device_list()

@@ -7,12 +7,13 @@ from typing import Any, Dict, Optional, Callable
 
 import certifi
 from paho.mqtt import client as mqtt
+from paho.mqtt.client import topic_matches_sub
 from bson import ObjectId
 
-from infrastructure.config.loader import load_config, get_gateway
+from infrastructure.config.loader import load_config
 
 cfg = load_config()
-gateway_cfg = get_gateway()
+
 
 MQTT_HOST = cfg["MQTT_HOST"]
 MQTT_PORT = int(cfg["MQTT_PORT"])
@@ -23,6 +24,8 @@ MQTT_PASS = cfg.get("MQTT_PASS")
 class MqttClient:
     def __init__(
         self,
+        gateway,
+        on_initial_load,
         log_callback: Callable[[str], None],
         stop_callback: Callable[[], None],
         start_callback: Callable[[], None],
@@ -32,11 +35,21 @@ class MqttClient:
         self.stop_device = stop_callback
         self.start_device = start_callback
         self.reset_device = reset_callback
-
+        self.on_initial_load = on_initial_load
         self.client: Optional[mqtt.Client] = None
         self._loop_started = False
         self._connect_thread: Optional[threading.Thread] = None
         self._connected_evt = threading.Event()
+        self.gateway = gateway
+        
+        self._cfg_ev  = threading.Event()
+        self._cfg_out = {}
+        self.deviceTopic = f"tenant/{self.gateway["organizationId"]}/gateway/{self.gateway["gatewayId"]}/device/+/command"
+        self.gatewayRespTopic = f"tenant/{self.gateway["organizationId"]}/gateway/{self.gateway["gatewayId"]}/config/response"
+        self.gatewayReqTopic = f"tenant/{self.gateway["organizationId"]}/gateway/{self.gateway["gatewayId"]}/config/request"
+
+        self.deviceReqTopic = f"tenant/{self.gateway["organizationId"]}/gateway/{self.gateway["gatewayId"]}/device/request"
+        self.deviceRespTopic = f"tenant/{self.gateway["organizationId"]}/gateway/{self.gateway["gatewayId"]}/device/response"
 
         self._log_initial_config()
 
@@ -74,26 +87,29 @@ class MqttClient:
         return f"tenant/{org_id}/gateway/{gw_id}/device/{serial}/device"
 
     # ---------- Connection ----------
-    def connect(self, broker: str = MQTT_HOST, port: int = MQTT_PORT) -> None:
+    def connect(self) -> None:
         """Create the client, configure TLS/LWT and start loop in background."""
+        broker = MQTT_HOST
+        port = MQTT_PORT
+        print(broker, port)
+        if not broker:
+            self.log("Error", "Debes ingresar un broker.")
+            return
         if self._connect_thread and self._connect_thread.is_alive():
             self.log("⚠️ MQTT connection already in progress.")
             return
 
         def _run() -> None:
-            client_id = f"gateway_py_{self._get(gateway_cfg,'gatewayId','gateway_id') or ObjectId()}"
+            client_id = f"gateway_py_{self._get(self.gateway,'gatewayId','gateway_id') or ObjectId()}"
             self.client = mqtt.Client(client_id=client_id, protocol=mqtt.MQTTv5)
 
-            # Credentials
             if MQTT_USER and MQTT_PASS:
                 self.client.username_pw_set(MQTT_USER, MQTT_PASS)
                 self.log("🔑 Credentials set")
 
-            # Last Will and Testament (online status)
-            lwt_topic = f"tenant/{self._get(gateway_cfg,'organizationId','organization_id')}/status"
+            lwt_topic = f"tenant/{self._get(self.gateway,'organizationId','organization_id')}/status"
             self.client.will_set(lwt_topic, json.dumps({"online": False}), qos=1, retain=False)
 
-            # TLS if using port 8883
             if port == 8883:
                 try:
                     ca = certifi.where()
@@ -110,7 +126,6 @@ class MqttClient:
             self.client.on_message = self.on_message
             self.client.on_log = self.on_log
 
-            # Connection with exponential backoff
             delay = 1.0
             while True:
                 try:
@@ -146,8 +161,8 @@ class MqttClient:
     def on_connect(self, client: mqtt.Client, userdata, flags, reason_code, properties=None) -> None:
         """MQTT on_connect callback."""
         self.log(f"✅ Connected (rc={reason_code})")
-        org_id = self._get(gateway_cfg, "organizationId", "organization_id")
-        gw_id = self._get(gateway_cfg, "gatewayId", "gateway_id")
+        org_id = self._get(self.gateway, "organizationId", "organization_id")
+        gw_id = self._get(self.gateway, "gatewayId", "gateway_id")
 
         if not org_id or not gw_id:
             self.log("⚠️ Missing organizationId / gatewayId in config")
@@ -160,7 +175,7 @@ class MqttClient:
         # Publish online status
         online_topic = f"tenant/{org_id}/status"
         self._publish(online_topic, json.dumps({"online": True}), qos=1)
-
+        self.on_initial_load()
         self._connected_evt.set()
 
     def on_disconnect(self, client: mqtt.Client, userdata, flags, reason_code, properties=None) -> None:
@@ -173,27 +188,37 @@ class MqttClient:
         if level >= mqtt.MQTT_LOG_INFO:
             self.log(f"[MQTT-{level}] {buf}")
 
-    def on_message(self, client: mqtt.Client, userdata, msg) -> None:
-        """MQTT on_message callback."""
-        print("on_message")
-        topic = msg.topic
-        try:
-            payload = msg.payload.decode("utf-8")
-            cmd = json.loads(payload)
+    def on_message(self, client, userdata, msg):
+        if topic_matches_sub(self.deviceTopic, msg.topic):
+            parts = msg.topic.split("/")
+            try:
+                dev_idx = parts.index("device") + 1
+                device_id = parts[dev_idx]
+            except Exception:
+                device_id = None
+            try:
+                payload = json.loads(msg.payload.decode("utf-8"))
+            except Exception:
+                payload = msg.payload  # raw if not JSON
 
-            action = cmd.get("action")
-            value = cmd.get("params", {}).get("value")
+            print(f"[CMD] device_id={device_id} topic={msg.topic} payload={payload}")
+            return
 
-            if value == 0:
-                self.stop_device()
-            elif value == 1:
-                self.start_device()
-            elif value == 2:
-                self.reset_device()
+        # 2) Config response (exact topic)
+        if msg.topic == self.reqTopic and self._cfg_ev is not None:
+            try:
+                data = json.loads(msg.payload.decode("utf-8"))
+            except Exception as e:
+                print("[CFG] json error:", e)
+                return
+            self._cfg_out.clear()
+            self._cfg_out.update(data)
+            self._cfg_ev.set()
+            print("[CFG] ✓ response captured")
+            return
 
-            self.log(f"📥 Command on {topic}: action={action}, value={value}")
-        except Exception as e:
-            self.log(f"❌ Error processing message on {topic}: {e}")
+        # 3) Anything else (optional)
+        print(f"[RX] {msg.topic} ({len(msg.payload)} bytes)")
 
     # ---------- Publish utilities ----------
     def _publish(self, topic: str, payload: str, qos: int = 1) -> None:
@@ -234,60 +259,18 @@ class MqttClient:
         self._publish(topic, json.dumps(device, default=str), qos=1)
         self.log(f"📤 Device → {topic}")
 
-    def send_gateway_register(self, name: str = "gateway", location: str = "unknown") -> None:
-        """Send gateway registration request."""
-        org_id = self._get(gateway_cfg, "organizationId", "organization_id") or ""
-        gw_id = self._get(gateway_cfg, "gatewayId", "gateway_id") or str(ObjectId())
-        if not self._is_valid_objectid(gw_id):
-            gw_id = str(ObjectId())
+    def request_gateway_config(self, cb):
+        resp = "tenant/68784d9492ad8045bc7b167a/gateway/68784d9592ad8045bc7b16ad/config/response"
+        req  = "tenant/68784d9492ad8045bc7b167a/gateway/68784d9592ad8045bc7b16ad/config/request"
 
-        data = {
-            "name": name,
-            "organizationId": org_id,
-            "location": location,
-            "gatewayId": gw_id,
-            "timestamp": datetime.utcnow().isoformat(),
-        }
-        topic = f"tenant/{org_id}/gateway/register/request"
-        info = self.client.publish(topic, json.dumps(data), qos=1)
-        info.wait_for_publish()
-        if info.rc == mqtt.MQTT_ERR_SUCCESS:
-            self.log(f"▶ Registration sent → {topic} (mid={info.mid})")
-        else:
-            self.log(f"❌ publish() failed rc={info.rc}")
+        self.client.message_callback_add(resp, cb)
+        self.client.subscribe(resp, qos=1)
+        self.client.publish(req, json.dumps({"timestamp": time.time()}), qos=1)
 
-    def request_gateway_config(self, timeout: float = 5.0) -> Optional[Dict[str, Any]]:
-        """Publish a config request and wait for a single response with timeout."""
-        if not self.client:
-            self.log("⚠️ MQTT client not initialized.")
-            return None
+    def request_devices(self, cb):
+        resp = "tenant/68784d9492ad8045bc7b167a/gateway/68784d9592ad8045bc7b16ad/device/response"
+        req  = "tenant/68784d9492ad8045bc7b167a/gateway/68784d9592ad8045bc7b16ad/device/request"
 
-        org_id = self._get(gateway_cfg, "organizationId", "organization_id") or ""
-        gw_id = self._get(gateway_cfg, "gatewayId", "gateway_id") or ""
-        req_topic = f"tenant/{org_id}/gateway/{gw_id}/config/request"
-        resp_topic = f"tenant/{org_id}/gateway/{gw_id}/config/response"
-
-        response: Dict[str, Any] = {}
-        received = threading.Event()
-
-        def _on_config_response(client, userdata, msg):
-            try:
-                payload = msg.payload.decode("utf-8")
-                response.update(json.loads(payload))
-            finally:
-                received.set()
-
-        self.client.subscribe(resp_topic, qos=1)
-        self.client.message_callback_add(resp_topic, _on_config_response)
-
-        payload = json.dumps({"timestamp": time.time()})
-        self.client.publish(req_topic, payload, qos=1)
-        self.log(f"▶ Config request → {req_topic}")
-
-        ok = received.wait(timeout)
-        self.client.message_callback_remove(resp_topic)
-
-        if not ok:
-            self.log(f"⚠️ No config response within {timeout}s.")
-            return None
-        return response
+        self.client.message_callback_add(resp, cb)
+        self.client.subscribe(resp, qos=1)
+        self.client.publish(req, json.dumps({"timestamp": time.time()}), qos=1)

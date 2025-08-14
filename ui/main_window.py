@@ -3,7 +3,6 @@ from tkinter import ttk, scrolledtext
 from application.app_controller import AppController
 # from infrastructure.modbus.modbus_tcp import ModbusTcp
 # from infrastructure.http.http_client import HttpClient
-from infrastructure.config.loader import get_gateway
 from ui.gateway_tab import build_gateway_tab
 from ui.device_tab import build_device_tab
 
@@ -24,7 +23,6 @@ class MainWindow(tk.Tk):
             foreground=[("disabled", "#999")]
         )
         self.log_widget = self._build_log_widget()
-        self.gateway_cfg = get_gateway()
 
         self.controller = AppController(self)
 

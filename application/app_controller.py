@@ -1,11 +1,12 @@
 from tkinter import messagebox
 from application.managers.gateway_manager import GatewayManager
-from infrastructure.config.loader import get_devices, get_gateway
+from application.managers.device_manager import DeviceManager
 from infrastructure.http.http_client import HttpClient
 from infrastructure.logo.logo_client import LogoModbusClient
 from infrastructure.modbus.modbus_serial import ModbusSerial
 from infrastructure.modbus.modbus_tcp import ModbusTcp
 from infrastructure.mqtt.mqtt_client import MqttClient
+from infrastructure.config.loader import get_gateway
 
 
 class AppController:
@@ -18,36 +19,18 @@ class AppController:
         self.window = window
         self.gateway_cfg = get_gateway()
         self.modbus_tcp_handler = ModbusTcp(self, self.window._log)
-        # Instancia Modbus Serial sin nombres de parámetros (posicionales)
         self.modbus_serial_handler = ModbusSerial(
             self,
             self.on_modbus_serial_read_callback,
             self.window._log,
         )
-        # Instancia LogoModbusClient sin nombres de parámetros
         self.logo_handler = LogoModbusClient(
             self,
             self.window._log,
             self.on_logo_read_callback
         )
-        self.available_devices = []
-        self.mqtt_handler = MqttClient(
-            log_callback=self.window._log,
-            stop_callback=self.modbus_tcp_handler.stop,
-            start_callback=self.modbus_tcp_handler.start,
-            reset_callback=self.modbus_tcp_handler.reset,
-        )
-
-        self.http_handler = HttpClient(
-                self,
-                self.on_http_read_callback,
-                self.window._log,
-            )
+        self.devices = []
         
-        self.selected_device_handler = None
-
-        self.load_devices()
-        self.gateway_manager = GatewayManager(self.mqtt_handler, self.window._log)
         self.signal_modbus_serial_dir = {
             "freqRef": 4,
             "accTime": 6,
@@ -72,56 +55,56 @@ class AppController:
             "highPressureRes": 11 # High-pressure reset delay
         }
 
-    # === Gateway ===
+        self.mqtt_handler = MqttClient(
+            self.gateway_cfg,
+            self.on_initial_load,
+            log_callback=self.window._log,
+            stop_callback=self.modbus_tcp_handler.stop,
+            start_callback=self.modbus_tcp_handler.start,
+            reset_callback=self.modbus_tcp_handler.reset
+        )
+        self.on_connect_mqtt()
+        self.http_handler = HttpClient(
+                self,
+                self.on_http_read_callback,
+                self.window._log,
+            )
+        
+        self.selected_device_handler = None
+        
+        self.device_manager = DeviceManager(self.mqtt_handler, self.refresh_device_list, self.window._log)
+        self.gateway_manager = GatewayManager(self.mqtt_handler, self._refresh_gateway_fields, self.window._log)
 
-    def load_gateway(self):
-        """Carga los datos del gateway desde el manager."""
-        return self.gateway_manager._load_gateway()
-    
-    def on_load_gateway(self):
-        gateway = self.controller.load_gateway()
-        self._refresh_gateway_fields(gateway)
+    # === initial load ===   
+
+    def on_initial_load(self):
+        self.gateway_manager.load_gateway()
+        self.device_manager.load_devices()
+
+    # === Gateway ===        
 
     def _refresh_gateway_fields(self, gateway):
-        print("llega a main", gateway )
         self.gw_name_var.set(gateway["name"])
         self.loc_var.set(gateway["location"])
-
-    def on_update_gateway(self):
-        """
-        Evento al actualizar gateway (pendiente de implementación).
-        Valida campos y actualiza mediante GatewayManager.
-        """
-        self.gateway_manager._load_gateway()
 
     # === MQTT ===
 
     def on_connect_mqtt(self):
-        """Conecta al broker MQTT configurado en la interfaz."""
-        broker = self.window.mqtt_host.get().strip()
-        port = self.window.port_var.get()
-        if not broker:
-            messagebox.showwarning("Error", "Debes ingresar un broker.")
-            return
-        self.mqtt_handler.connect(broker, port)
+        self.mqtt_handler.connect()
 
     # === Devices ===
 
-    def load_devices(self):
-        """Carga la lista de dispositivos disponibles desde configuración."""
-        self.available_devices = get_devices()
-
     def get_device_by_name(self, name):
         """Busca un dispositivo por nombre en la lista cargada."""
-        return next((d for d in self.available_devices if d.get("name") == name), None)
+        return next((d for d in self.devices if d.get("name") == name), None)
 
-    def refresh_device_list(self):
+    def refresh_device_list(self, devices=[]):
         """Actualiza el combobox de dispositivos y selecciona el primero."""
-        names = [d.get("name") for d in self.available_devices]
+        names = [d.get("name") for d in devices]
         self.window.device_combo["values"] = names
         if names:
             self.window.device_combo.current(0)
-            self.update_device_fields(self.available_devices[0])
+            self.update_device_fields(devices[0])
 
     def on_select_device(self, event=None):
         """
@@ -140,81 +123,18 @@ class AppController:
         """
         Rellena los campos de la interfaz según los datos del dispositivo.
         """
-        self.window.device_name_var.set(device.get("name", ""))
-        self.window.serial_var.set(device.get("serialNumber", ""))
-        self.window.model_var.set(device.get("model", ""))
-        self.window.http_ip_var.set(device.get("http_ip", ""))
-        self.window.http_port_var.set(device.get("http_port", ""))
-        self.window.serial_port_var.set(device.get("serial_port", ""))
-        self.window.baudrate_var.set(device.get("baudrate", 0))
-        self.window.slave_id_var.set(device.get("slave_id", 0))
-        self.window.logo_ip_var.set(device.get("logo_ip", ""))
-        self.window.logo_port_var.set(device.get("logo_port", 0))
-        self.window.tcp_ip_var.set(device.get("tcp_ip", ""))
-        self.window.tcp_port_var.set(device.get("tcp_port", 0))
-
-    def on_save_device(self):
-        """
-        Guarda el dispositivo seleccionado a través de MQTT y refresca la UI.
-        """
-        key = self.window.selected_device_var.get()
-        if not key:
-            self.window._log("⚠ Selecciona un dispositivo.")
-            return
-
-        device = self.get_device_by_name(key)
-        if not device:
-            self.window._log("⚠ Dispositivo no encontrado.")
-            return
-
-        # Actualiza campos en el dict del dispositivo
-        device.update({
-            "name": self.window.device_name_var.get().strip(),
-            "serialNumber": self.window.serial_var.get().strip(),
-            "model": self.window.model_var.get().strip(),
-            "http_ip": self.window.http_ip_var.get().strip(),
-            "http_port": self.window.http_port_var.get().strip(),
-            "serial_port": self.window.serial_port_var.get().strip(),
-            "baudrate": self.window.baudrate_var.get(),
-            "slave_id": self.window.slave_id_var.get(),
-            "register": self.window.register_var.get(),
-            "logo_ip": self.window.logo_ip_var.get().strip(),
-            "logo_port": self.window.logo_port_var.get(),
-            "tcp_ip": self.window.tcp_ip_var.get().strip(),
-            "tcp_port": self.window.tcp_port_var.get(),
-        })
-
-        # Envía por MQTT y actualiza lista
-        self.mqtt_handler.save_device(
-            self.gateway_cfg.get("organizationId"),
-            self.gateway_cfg.get("gatewayId"),
-            device,
-        )
-        self.refresh_device_list()
-        self.window._log(f"Dispositivo '{device.get('name')}' guardado correctamente.")
-
-    def on_add_device(self):
-        """Añade un nuevo dispositivo con valores por defecto."""
-        new_device = {
-            "name": "NuevoDispositivo",
-            "serialNumber": "",
-            "model": "",
-            "http_ip": "",
-            "http_port": "",
-            "serial_port": "",
-            "baudrate": 0,
-            "slave_id": 0,
-            "register": None,
-            "logo_ip": "",
-            "logo_port": 0,
-            "tcp_ip": "",
-            "tcp_port": 0,
-        }
-        self.available_devices.append(new_device)
-        self.refresh_device_list()
-        self.window.device_combo.current(len(self.available_devices) - 1)
-        self.update_device_fields(new_device)
-        self.window._log("Nuevo dispositivo creado.")
+        self.window.device_name_var.set(device["name"])
+        self.window.serial_var.set(device["serialNumber"])
+        self.window.model_var.set(device["deviceModel"])
+        self.window.http_ip_var.set(device["connectionConfig"]["host"])
+        self.window.http_port_var.set(device["connectionConfig"]["httpPort"])
+        self.window.serial_port_var.set(device["connectionConfig"]["serialPort"])
+        self.window.baudrate_var.set(device["connectionConfig"]["baudrate"])
+        self.window.slave_id_var.set(device["connectionConfig"]["slaveId"])
+        self.window.logo_ip_var.set(device["connectionConfig"]["logoIp"])
+        self.window.logo_port_var.set(device["connectionConfig"]["logoPort"])
+        self.window.tcp_ip_var.set(device["connectionConfig"]["host"])
+        self.window.tcp_port_var.set(device["connectionConfig"]["tcpPort"])
 
     # === HTTP Client ===
 
@@ -236,7 +156,6 @@ class AppController:
 
     def on_http_read_callback(self, results: dict) -> None:
         """Callback invocado desde HttpClient (posible hilo/loop async)."""
-        # Pasa el manejo al hilo principal de Tkinter
         self.window.after(0, lambda: self._handle_http_results(results, "drive"))
 
     def _handle_http_results(self, results: dict, group: str) -> None:
@@ -267,7 +186,6 @@ class AppController:
             }
             
             self.mqtt_handler.send_signal(topic_info, signal)
-            # self._log(f"📤 Enviado MQTT: {topic_info}")
         except Exception as e:
             self.window._log(f"❌ on_http_read_callback error: {e}")
 
@@ -284,6 +202,7 @@ class AppController:
             self.window._log(f"Historial recibido: {fault_history}")
         else:
             self.window._log("No se pudo obtener el historial.")
+
     # === Modbus Serial ===
 
     def on_connect_modbus_serial(self):
@@ -324,7 +243,6 @@ class AppController:
 
     def _build_signal_from_regs(self, regs: dict[int, int]) -> dict:
         s = {name: regs.get(addr) for name, addr in self.signal_modbus_serial_dir.items()}
-        # conversiones necesarias (sin diccionarios extra)
         if s["curr"]  is not None: s["curr"]  /= 10
         if s["power"] is not None: s["power"] /= 10
         if s["freqRef"] is not None: s["freqRef"] /= 100

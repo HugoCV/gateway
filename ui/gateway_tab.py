@@ -21,8 +21,8 @@ def build_gateway_tab(app, parent):
     mqtt_frame = ttk.LabelFrame(parent, text="Conexión MQTT", padding=15)
     mqtt_frame.pack(fill="x", padx=15, pady=(15, 10))
 
-    app.mqtt_host = tk.StringVar(value=app.gateway_cfg.get("broker", MQTT_HOST))
-    app.port_var = tk.IntVar(value=app.gateway_cfg.get("port", MQTT_PORT))
+    app.mqtt_host = tk.StringVar(value=app.controller.gateway_cfg.get("broker", MQTT_HOST))
+    app.port_var = tk.IntVar(value=app.controller.gateway_cfg.get("port", MQTT_PORT))
 
     ttk.Label(mqtt_frame, text="Broker:").grid(row=0, column=0, sticky="e", padx=5, pady=5)
     ttk.Entry(mqtt_frame, textvariable=app.mqtt_host).grid(row=0, column=1, sticky="we", padx=5, pady=5)
@@ -30,7 +30,7 @@ def build_gateway_tab(app, parent):
     ttk.Label(mqtt_frame, text="Puerto:").grid(row=0, column=2, sticky="e", padx=5, pady=5)
     ttk.Entry(mqtt_frame, textvariable=app.port_var, width=6).grid(row=0, column=3, padx=5, pady=5)
 
-    ttk.Button(mqtt_frame, text="Conectar", command=app.controller.on_connect_mqtt).grid(row=0, column=4, padx=10)
+    # ttk.Button(mqtt_frame, text="Conectar", command=app.controller.on_connect_mqtt).grid(row=0, column=4, padx=10)
 
     mqtt_frame.columnconfigure(1, weight=1)
 
@@ -38,9 +38,9 @@ def build_gateway_tab(app, parent):
     gw_frame = ttk.LabelFrame(parent, text="Puerta de enlace", padding=15)
     gw_frame.pack(fill="x", padx=15, pady=(5, 10))
 
-    app.controller.gw_name_var = tk.StringVar(value=app.gateway_cfg.get("name", ""))
-    app.controller.org_var = tk.StringVar(value=app.gateway_cfg.get("organizationId", ""))
-    app.controller.loc_var = tk.StringVar(value=app.gateway_cfg.get("location", ""))
+    app.controller.gw_name_var = tk.StringVar(value=app.controller.gateway_cfg.get("name", ""))
+    app.controller.org_var = tk.StringVar(value=app.controller.gateway_cfg.get("organizationId", ""))
+    app.controller.loc_var = tk.StringVar(value=app.controller.gateway_cfg.get("location", ""))
 
     fields = [
         ("Nombre", app.controller.gw_name_var),
@@ -52,7 +52,7 @@ def build_gateway_tab(app, parent):
         ttk.Label(gw_frame, text=label + ":").grid(row=i, column=0, sticky="e", padx=5, pady=5)
         ttk.Entry(gw_frame, textvariable=var).grid(row=i, column=1, sticky="we", padx=5, pady=5)
 
-    ttk.Button(gw_frame, text="Actualizar", command=app.controller.on_load_gateway).grid(
+    ttk.Button(gw_frame, text="Cargar datos", command=app.controller.on_initial_load).grid(
         row=len(fields), column=0, columnspan=2, pady=10
     )
 
