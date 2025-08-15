@@ -1,7 +1,6 @@
 import time
 import threading
 from pymodbus.client import ModbusTcpClient
-from tkinter import messagebox
 
 class ModbusTcp:
     def __init__(self, controller, set_registers, log):

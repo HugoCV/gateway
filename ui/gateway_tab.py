@@ -38,14 +38,14 @@ def build_gateway_tab(app, parent):
     gw_frame = ttk.LabelFrame(parent, text="Puerta de enlace", padding=15)
     gw_frame.pack(fill="x", padx=15, pady=(5, 10))
 
-    app.controller.gw_name_var = tk.StringVar(value=app.controller.gateway_cfg.get("name", ""))
-    app.controller.org_var = tk.StringVar(value=app.controller.gateway_cfg.get("organizationId", ""))
-    app.controller.loc_var = tk.StringVar(value=app.controller.gateway_cfg.get("location", ""))
+    app.gw_name_var = tk.StringVar(value=app.controller.gateway_cfg.get("name", ""))
+    app.org_var = tk.StringVar(value=app.controller.gateway_cfg.get("organizationId", ""))
+    app.loc_var = tk.StringVar(value=app.controller.gateway_cfg.get("location", ""))
 
     fields = [
-        ("Nombre", app.controller.gw_name_var),
-        ("Organización ID", app.controller.org_var),
-        ("Ubicación", app.controller.loc_var)
+        ("Nombre", app.gw_name_var),
+        ("Organización ID", app.org_var),
+        ("Ubicación", app.loc_var)
     ]
 
     for i, (label, var) in enumerate(fields):
