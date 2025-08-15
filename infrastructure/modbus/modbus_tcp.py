@@ -4,10 +4,12 @@ from pymodbus.client import ModbusTcpClient
 from tkinter import messagebox
 
 class ModbusTcp:
-    def __init__(self, controller, log):
+    def __init__(self, controller, set_registers, log):
+        self.set_registers = set_registers
         self.controller = controller
         self.client = None
         self.log = log
+        self._lock = threading.Lock()
 
     def connect(self, ip, port) -> bool:
         self.log(f"🔌 Iniciando conexión {ip}:{port}")
@@ -34,15 +36,6 @@ class ModbusTcp:
                 return False
 
             self.log(f"✅ Conectado a {ip}:{port}")
-
-            # Prueba de escritura (opcional)
-            rr = self.client.write_register(address=4358, value=4)
-            if rr is None or rr.isError():
-                self.log("⚠️ Conectado, pero falló write_register(4358, 2)")
-            else:
-                self.log("📝 write_register(4358, 2) OK")
-
-            return True
 
         except Exception as e:
             self.log(f"❌ Error conectando a {ip}:{port}: {e}")
@@ -78,7 +71,13 @@ class ModbusTcp:
                 self.log("✔ Comando enviado: RESET")
 
     def set_local(self):
-        self.remoto = self.client.write_register(address=4358, value=2)
+        rr = self.client.write_register(address=4358, value=4)
+        if rr is None or rr.isError():
+            self.log("⚠️ Conectado, pero falló write_register(4358, 2)")
+        else:
+            self.log("📝 write_register(4358, 2) OK")
+
+        return True
 
     def set_remote(self):
         self.remoto = self.client.write_register(address=4358, value=4)
@@ -105,3 +104,50 @@ class ModbusTcp:
             "serial_number": device_serial
         }
         self.controller.gateway.send_signal(topic_info, signal_info)
+
+    def poll_registers(
+        self,
+        addresses: list[int],
+        interval: float = 0.5
+    ) -> threading.Thread:
+        """
+        Starts a background thread that continuously polls holding registers.
+
+        :param addresses: List of register addresses to read (count=1 each).
+        :param interval: Seconds to wait between polling cycles.
+        :returns: The Thread object running the polling loop.
+        """
+        def _poll():
+            while True:
+                regs_group = {}
+                for addr in addresses:
+                    try:
+                        regs = self.read_holding_registers(addr, 1, count=1)
+                        regs_group[addr] = regs[0]
+                        # self.log(f"▶ Polled register {addr}: {regs}")
+                    except Exception as e:
+                        self.log(f"❌ Exception polling register {addr}: {e}")
+                time.sleep(interval)
+                self.set_registers(regs_group)
+        thread = threading.Thread(target=_poll, daemon=True)
+        thread.start()
+        return thread
+    
+    def read_holding_registers(self, address: int, slave_id, count: int = 1) -> list[bool] | None:
+        # self.app._log(f"Leyendo el esclavo: {self.app.slave_id_var.get()}")
+        """Reads `count` coils starting at `address`."""
+        if not self.client:
+            self.log("⚠️ Client not connected. Call connect() first.")
+            return None
+        with self._lock:
+            try:
+                rr = self.client.read_holding_registers(address, count=count)
+                if rr and not rr.isError():
+                    regs   = list(rr.registers)
+                    status = getattr(rr, 'status', None)
+                    # self.log(f"▶Registro={address}, Respuesta={regs}, Estado={status}")
+                    return regs
+                self.log(f"❌ Error reading coils: {rr}")
+            except Exception as e:
+                self.log(f"❌ Exception reading coils: {e}")
+        return None

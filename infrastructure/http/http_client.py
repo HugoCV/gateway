@@ -48,7 +48,7 @@ class HttpClient:
         if interval is not None:
             self.interval = interval
         if self.running:
-            self.app._log('⚠️ HTTP polling already running.')
+            self.log('⚠️ HTTP polling already running.')
             return
         self.running = True
         self._start_loop()
@@ -56,12 +56,12 @@ class HttpClient:
 
     def stop_continuous_read(self) -> None:
         if not self.running:
-            self.app._log('⚠️ HTTP polling is not running.')
+            self.log('⚠️ HTTP polling is not running.')
             return
         self.running = False
         fut = asyncio.run_coroutine_threadsafe(self._close(), self.loop)
         fut.result(timeout=3)
-        self.app._log('⏹️ Async HTTP polling stopped.')
+        self.log('⏹️ Async HTTP polling stopped.')
 
     async def read_fault_history(self) -> dict | None:
         session = await self._ensure_session()
@@ -90,7 +90,7 @@ class HttpClient:
             async with session.get(url, timeout=3) as response:
                 if response.status == 200:
                     return await response.json()
-                self.app._log(f'⚠️ HTTP {response.status} {url}')
+                self.log(f'⚠️ HTTP {response.status} {url}')
         except Exception as e:
-            self.app._log(f'❌ HTTP exception {url}: {e}')
+            self.log(f'❌ HTTP exception {url}: {e}')
         return None

@@ -66,8 +66,7 @@ def build_device_tab(app, parent):
 
     http_buttons = [
         ("Conectar", app.controller.on_connect_http),
-        ("Iniciar",  app.controller.on_read_http),
-        ("Leer Historial", app.controller.on_read_http_history),
+        ("Leer Multiple", app.controller.on_multiple_http),
     ]
     for idx, (text, cmd) in enumerate(http_buttons):
         r = idx // wrap
@@ -143,7 +142,7 @@ def build_device_tab(app, parent):
         ("Iniciar",  app.controller.on_start_modbus_tcp),
         ("Apagar",   app.controller.on_stop_modbus_tcp),
         ("Reiniciar",app.controller.on_reset_modbus_tcp),
-        ("Leer Multiple", app.controller.on_custom_modbus_tcp),
+        ("Leer Multiple", app.controller.on_multiple_modbus_tcp),
         ("Local", app.controller.on_set_remote_tcp),
     ]
     for idx, (text, cmd) in enumerate(tcp_buttons):
@@ -183,8 +182,3 @@ def build_device_tab(app, parent):
         ttk.Button(tcp_btn_frame, text=text, command=command).pack(side="left", padx=5)
 
         
-
-    
-
-    # Fill combobox with devices
-    # app.controller.refresh_device_list()

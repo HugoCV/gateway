@@ -18,7 +18,11 @@ class AppController:
     def __init__(self, window):
         self.window = window
         self.gateway_cfg = get_gateway()
-        self.modbus_tcp_handler = ModbusTcp(self, self.window._log)
+        self.modbus_tcp_handler = ModbusTcp(
+            self, 
+            self.on_modbus_tcp_read_callback, 
+            self.window._log
+        )
         self.modbus_serial_handler = ModbusSerial(
             self,
             self.on_modbus_serial_read_callback,
@@ -30,6 +34,24 @@ class AppController:
             self.on_logo_read_callback
         )
         self.devices = []
+
+
+        self.signal_modbus_tcp_dir = {
+            "freqRef": 5, # Esta bien
+            "accTime": 7, # Esta bien
+            "decTime": 8, # Esta bien
+            "curr":    9, # Esta bien
+            "freq":    10, # Esta bien
+            "volt":    11, # Esta bien
+            "voltDcLink": 12, # Esta bien
+            "power":   13,  # No se puede saber
+            "stat":    17, #Esta bien 0=stop 1=falla 2=operacion
+            "dir":     19,   # cámbialo si 'dir' es otro registro
+            "speed":   786, #Esta bien
+            "alarm":   816,
+            "temp":    861,
+            "fault":   15
+        }
         
         self.signal_modbus_serial_dir = {
             "freqRef": 4,
@@ -59,9 +81,7 @@ class AppController:
             self.gateway_cfg,
             self.on_initial_load,
             log_callback=self.window._log,
-            stop_callback=self.modbus_tcp_handler.stop,
-            start_callback=self.modbus_tcp_handler.start,
-            reset_callback=self.modbus_tcp_handler.reset
+            command_callback=self.on_receive_command
         )
         self.on_connect_mqtt()
         self.http_handler = HttpClient(
@@ -74,6 +94,11 @@ class AppController:
         
         self.device_manager = DeviceManager(self.mqtt_handler, self.refresh_device_list, self.window._log)
         self.gateway_manager = GatewayManager(self.mqtt_handler, self._refresh_gateway_fields, self.window._log)
+    # === commands ===
+    def on_receive_command(self, device_id, command):
+        print("command", device_id,command)
+        
+
 
     # === initial load ===   
 
@@ -92,14 +117,45 @@ class AppController:
     def on_connect_mqtt(self):
         self.mqtt_handler.connect()
 
+    def on_send_signal(self, results, group):
+        try:
+            
+            if not isinstance(results, dict) or not results:
+                self.window._log("⚠️ Resultado vacío o no es dict; no se envía MQTT.")
+                return
+            serial = (self.window.serial_var.get() or "").strip()
+            if not serial:
+                self.window._log("⚠️ Serial vacío; se omite envío MQTT.")
+                return
+
+            topic_info = {
+                "serial_number":  serial,
+                "organization_id": self.gateway_cfg.get("organization_id") or self.gateway_cfg.get("organizationId"),
+                "gateway_id":      self.gateway_cfg.get("gateway_id")      or self.gateway_cfg.get("gatewayId"),
+            }
+
+            if not topic_info["organization_id"] or not topic_info["gateway_id"]:
+                self.window._log(f"⚠️ Faltan IDs en gateway_cfg: {topic_info}")
+                return
+            
+            signal = {
+                "group": group,
+                "payload": results
+            }
+            
+            self.mqtt_handler.send_signal(topic_info, signal)
+        except Exception as e:
+            self.window._log(f"❌ on_http_read_callback error: {e}")
+
     # === Devices ===
 
     def get_device_by_name(self, name):
         """Busca un dispositivo por nombre en la lista cargada."""
-        return next((d for d in self.devices if d.get("name") == name), None)
+        return next((d for d in self.device_manager.devices if d.get("name") == name), None)
 
     def refresh_device_list(self, devices=[]):
         """Actualiza el combobox de dispositivos y selecciona el primero."""
+        print(devices)
         names = [d.get("name") for d in devices]
         self.window.device_combo["values"] = names
         if names:
@@ -145,8 +201,8 @@ class AppController:
         if ip and port:
             base_url = f"http://{ip}:{port}/api/dashboard"
             self.http_handler.connect(base_url=base_url, interval=5)
-            fault_history = self.http_handler.read_fault_history_sync()
-            self._handle_http_results(fault_history[0], "history")
+            # fault_history = self.http_handler.read_fault_history_sync()
+            # self._handle_http_results(fault_history[0], "history")
             self.http_handler.start_continuous_read()
             
             self.window._log(f"🌐 HTTPClient conectado a: {base_url}")
@@ -156,43 +212,9 @@ class AppController:
 
     def on_http_read_callback(self, results: dict) -> None:
         """Callback invocado desde HttpClient (posible hilo/loop async)."""
-        self.window.after(0, lambda: self._handle_http_results(results, "drive"))
+        self.window.after(0, lambda: self.on_send_signal(results, "drive"))
 
-    def _handle_http_results(self, results: dict, group: str) -> None:
-        """Ya en el hilo principal: leer UI, formar topic y enviar MQTT."""
-        try:
-            
-            if not isinstance(results, dict) or not results:
-                self.window._log("⚠️ HTTP results vacío o no es dict; no se envía MQTT.")
-                return
-            serial = (self.window.serial_var.get() or "").strip()
-            if not serial:
-                self.window._log("⚠️ Serial vacío; se omite envío MQTT.")
-                return
-
-            topic_info = {
-                "serial_number":  serial,
-                "organization_id": self.gateway_cfg.get("organization_id") or self.gateway_cfg.get("organizationId"),
-                "gateway_id":      self.gateway_cfg.get("gateway_id")      or self.gateway_cfg.get("gatewayId"),
-            }
-
-            if not topic_info["organization_id"] or not topic_info["gateway_id"]:
-                self.window._log(f"⚠️ Faltan IDs en gateway_cfg: {topic_info}")
-                return
-            
-            signal = {
-                "group": group,
-                "payload": results
-            }
-            
-            self.mqtt_handler.send_signal(topic_info, signal)
-        except Exception as e:
-            self.window._log(f"❌ on_http_read_callback error: {e}")
-
-    def on_read_http(self):
-        print("on_read_http")
-
-    def on_read_http_history(self):
+    def on_multiple_http(self):
         """
         Llamada síncrona desde Tkinter que agenda la corrutina en el loop async
         y devuelve el resultado.
@@ -241,8 +263,8 @@ class AppController:
             interval=0.5,
         )
 
-    def _build_signal_from_regs(self, regs: dict[int, int]) -> dict:
-        s = {name: regs.get(addr) for name, addr in self.signal_modbus_serial_dir.items()}
+    def _build_signal_from_regs(self, regs: dict[int, int], modbus_dir) -> dict:
+        s = {name: regs.get(addr) for name, addr in modbus_dir.items()}
         if s["curr"]  is not None: s["curr"]  /= 10
         if s["power"] is not None: s["power"] /= 10
         if s["freqRef"] is not None: s["freqRef"] /= 100
@@ -252,7 +274,7 @@ class AppController:
     def on_modbus_serial_read_callback(self, regs):
         """Lee según signal_modbus_serial_dir, aplica escala y loguea."""
         print(regs)
-        signal = self._build_signal_from_regs(regs)
+        signal = self._build_signal_from_regs(regs, self.signal_modbus_serial_dir)
 
         labels = {
             "freqRef": "Referencia de frecuencia",
@@ -283,6 +305,8 @@ class AppController:
             return
 
         self.modbus_tcp_handler.connect(ip, port)
+        self.modbus_tcp_handler.set_local()
+        
         self.selected_device_handler = self.modbus_tcp_handler
 
     def on_start_modbus_tcp(self):
@@ -300,9 +324,38 @@ class AppController:
     def on_custom_modbus_tcp(self):
         """Configura local Modbus TCP."""
         self.modbus_tcp_handler.set_local()
-    
+
+    def on_multiple_modbus_tcp(self):
+            addresses = list(dict.fromkeys(self.signal_modbus_tcp_dir.values()))
+            print(addresses)
+            self.modbus_serial_thread = self.modbus_tcp_handler.poll_registers(
+                addresses=addresses,
+                interval=0.5,
+            )
+
     def on_set_remote_tcp(self):
         self.modbus_tcp_handler.write_register(address=4358, value=2)
+    
+    def on_modbus_tcp_read_callback(self, regs):
+        """Lee según signal_modbus_serial_dir, aplica escala y loguea."""
+        signal = self._build_signal_from_regs(regs, self.signal_modbus_tcp_dir)
+
+        labels = {
+            "freqRef": "Referencia de frecuencia",
+            "accTime": "Tiempo de aceleración",
+            "decTime": "Tiempo de desaceleración",
+            "curr":    "Amperaje de salida",
+            "freq":    "Frecuencia de salida",
+            "volt":    "Voltaje de salida",
+            "power":   "Potencia en kW",
+            "stat":    "Estado",
+            "dir":     "Dirección",
+        }
+        for k, label in labels.items():
+            v = signal.get(k, None)
+            if v is not None:
+                self.window._log(f"⚠️ {label}: {v}")
+        self.on_send_signal(signal, "drive")
 
     # === Logo ===
 

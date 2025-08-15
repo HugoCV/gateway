@@ -27,14 +27,11 @@ class MqttClient:
         gateway,
         on_initial_load,
         log_callback: Callable[[str], None],
-        stop_callback: Callable[[], None],
-        start_callback: Callable[[], None],
-        reset_callback: Callable[[], None],
+        command_callback: Callable[[], None]
     ) -> None:
         self.log = log_callback
-        self.stop_device = stop_callback
-        self.start_device = start_callback
-        self.reset_device = reset_callback
+        self.command_callback = command_callback
+        
         self.on_initial_load = on_initial_load
         self.client: Optional[mqtt.Client] = None
         self._loop_started = False
@@ -44,7 +41,7 @@ class MqttClient:
         
         self._cfg_ev  = threading.Event()
         self._cfg_out = {}
-        self.deviceTopic = f"tenant/{self.gateway["organizationId"]}/gateway/{self.gateway["gatewayId"]}/device/+/command"
+        self.deviceCommandTopic = f"tenant/{self.gateway["organizationId"]}/gateway/{self.gateway["gatewayId"]}/device/+/command"
         self.gatewayRespTopic = f"tenant/{self.gateway["organizationId"]}/gateway/{self.gateway["gatewayId"]}/config/response"
         self.gatewayReqTopic = f"tenant/{self.gateway["organizationId"]}/gateway/{self.gateway["gatewayId"]}/config/request"
 
@@ -56,14 +53,6 @@ class MqttClient:
     # ---------- Helpers ----------
     def _log_initial_config(self) -> None:
         self.log(f"🔧 MQTT -> host={MQTT_HOST}, port={MQTT_PORT}")
-
-    @staticmethod
-    def _is_valid_objectid(v: str) -> bool:
-        try:
-            ObjectId(v)
-            return True
-        except Exception:
-            return False
 
     @staticmethod
     def _get(gw: Dict[str, Any], *keys: str) -> Optional[str]:
@@ -189,7 +178,7 @@ class MqttClient:
             self.log(f"[MQTT-{level}] {buf}")
 
     def on_message(self, client, userdata, msg):
-        if topic_matches_sub(self.deviceTopic, msg.topic):
+        if topic_matches_sub(self.deviceCommandTopic, msg.topic):
             parts = msg.topic.split("/")
             try:
                 dev_idx = parts.index("device") + 1
@@ -200,7 +189,7 @@ class MqttClient:
                 payload = json.loads(msg.payload.decode("utf-8"))
             except Exception:
                 payload = msg.payload  # raw if not JSON
-
+            self.command_callback(device_id, payload)
             print(f"[CMD] device_id={device_id} topic={msg.topic} payload={payload}")
             return
 
@@ -249,28 +238,14 @@ class MqttClient:
         print("signal enviada", signal_info)
         self.log(f"📤 Signal → {topic}")
 
-    def save_device(self, organization_id: str, gateway_id: str, device: Dict[str, Any]) -> None:
-        """Publish device metadata/status payload."""
-        serial = str(device.get("serialNumber") or device.get("serial_number") or "").strip()
-        if not serial:
-            self.log("⚠️ Device missing serialNumber")
-            return
-        topic = self._topic_device(organization_id, gateway_id, serial)
-        self._publish(topic, json.dumps(device, default=str), qos=1)
-        self.log(f"📤 Device → {topic}")
 
     def request_gateway_config(self, cb):
-        resp = "tenant/68784d9492ad8045bc7b167a/gateway/68784d9592ad8045bc7b16ad/config/response"
-        req  = "tenant/68784d9492ad8045bc7b167a/gateway/68784d9592ad8045bc7b16ad/config/request"
-
-        self.client.message_callback_add(resp, cb)
-        self.client.subscribe(resp, qos=1)
-        self.client.publish(req, json.dumps({"timestamp": time.time()}), qos=1)
+        self.client.message_callback_add(self.gatewayRespTopic, cb)
+        self.client.subscribe(self.gatewayRespTopic, qos=1)
+        self.client.publish(self.gatewayReqTopic, json.dumps({"timestamp": time.time()}), qos=1)
 
     def request_devices(self, cb):
-        resp = "tenant/68784d9492ad8045bc7b167a/gateway/68784d9592ad8045bc7b16ad/device/response"
-        req  = "tenant/68784d9492ad8045bc7b167a/gateway/68784d9592ad8045bc7b16ad/device/request"
 
-        self.client.message_callback_add(resp, cb)
-        self.client.subscribe(resp, qos=1)
-        self.client.publish(req, json.dumps({"timestamp": time.time()}), qos=1)
+        self.client.message_callback_add(self.deviceRespTopic, cb)
+        self.client.subscribe(self.deviceRespTopic, qos=1)
+        self.client.publish(self.deviceReqTopic, json.dumps({"timestamp": time.time()}), qos=1)
