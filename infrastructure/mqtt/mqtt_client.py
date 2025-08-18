@@ -41,12 +41,14 @@ class MqttClient:
         
         self._cfg_ev  = threading.Event()
         self._cfg_out = {}
-        self.deviceCommandTopic = f"tenant/{self.gateway["organizationId"]}/gateway/{self.gateway["gatewayId"]}/device/+/command"
-        self.gatewayRespTopic = f"tenant/{self.gateway["organizationId"]}/gateway/{self.gateway["gatewayId"]}/config/response"
-        self.gatewayReqTopic = f"tenant/{self.gateway["organizationId"]}/gateway/{self.gateway["gatewayId"]}/config/request"
+        org_id = self.gateway['organizationId']
+        gw_id = self.gateway['gatewayId']
 
-        self.deviceReqTopic = f"tenant/{self.gateway["organizationId"]}/gateway/{self.gateway["gatewayId"]}/device/request"
-        self.deviceRespTopic = f"tenant/{self.gateway["organizationId"]}/gateway/{self.gateway["gatewayId"]}/device/response"
+        self.deviceCommandTopic = f"tenant/{org_id}/gateway/{gw_id}/device/+/command"
+        self.gatewayRespTopic = f"tenant/{org_id}/gateway/{gw_id}/config/response"
+        self.gatewayReqTopic = f"tenant/{org_id}/gateway/{gw_id}/config/request"
+        self.deviceReqTopic = f"tenant/{org_id}/gateway/{gw_id}/device/request"
+        self.deviceRespTopic = f"tenant/{org_id}/gateway/{gw_id}/device/response"
 
         self._log_initial_config()
 
