@@ -2,9 +2,34 @@ import time
 import threading
 from pymodbus.client import ModbusTcpClient
 
+MODBUS_LABELS = {
+    "freqRef": "Referencia de frecuencia",
+    "accTime": "Tiempo de aceleración",
+    "decTime": "Tiempo de desaceleración",
+    "curr":    "Amperaje de salida",
+    "freq":    "Frecuencia de salida",
+    "volt":    "Voltaje de salida",
+    "voltDcLink": "Voltaje DC Link",
+    "power":   "Potencia en kW",
+    "stat":    "Estado",
+    "dir":     "Dirección",
+    "speed":   "Velocidad (rpm)",
+    "alarm":   "Alarma",
+    "temp":    "Temperatura",
+    "fault":   "Falla",
+}
+
+MODBUS_SCALES = {
+    "curr": 0.1,      # /10
+    "power": 0.1,     # /10
+    "freqRef": 0.01,  # /100
+    "freq": 0.01,     # /100
+}
+
+
 class ModbusTcp:
-    def __init__(self, controller, set_registers, log):
-        self.set_registers = set_registers
+    def __init__(self, controller, send_signal, log):
+        self.send_signal = send_signal
         self.controller = controller
         self.client = None
         self.log = log
@@ -93,16 +118,16 @@ class ModbusTcp:
                 time.sleep(5)
         threading.Thread(target=read_loop, daemon=True).start()
 
-    def send_signal(self, signal_info):
-        device_serial = self.controller.serial_var.get().strip()
-        gw_id = self.controller.gateway_cfg.get("gatewayId")
-        or_id = self.controller.gateway_cfg.get("organizationId")
-        topic_info = {
-            "gateway_id": gw_id,
-            "organization_id": or_id,
-            "serial_number": device_serial
-        }
-        self.controller.gateway.send_signal(topic_info, signal_info)
+    # def send_signal(self, signal_info):
+    #     device_serial = self.controller.serial_var.get().strip()
+    #     gw_id = self.controller.gateway_cfg.get("gatewayId")
+    #     or_id = self.controller.gateway_cfg.get("organizationId")
+    #     topic_info = {
+    #         "gateway_id": gw_id,
+    #         "organization_id": or_id,
+    #         "serial_number": device_serial
+    #     }
+    #     self.controller.gateway.send_signal(topic_info, signal_info)
 
     def poll_registers(
         self,
@@ -127,10 +152,37 @@ class ModbusTcp:
                     except Exception as e:
                         self.log(f"❌ Exception polling register {addr}: {e}")
                 time.sleep(interval)
-                self.set_registers(regs_group)
+                self._read_callback(regs_group)
+                # self.set_registers(regs_group)
         thread = threading.Thread(target=_poll, daemon=True)
         thread.start()
         return thread
+    
+    def _build_signal_from_regs(self, regs: dict[int, int], modbus_dir) -> dict:
+        """
+        Crea dict de señal a partir de registros, aplicando escalas definidas en MODBUS_SCALES.
+        """
+        s = {}
+        for name, addr in modbus_dir.items():
+            v = regs.get(addr)
+            if v is None:
+                s[name] = None
+                continue
+            if name in MODBUS_SCALES:
+                s[name] = v * MODBUS_SCALES[name]
+            else:
+                s[name] = v
+        return s
+    
+    def _read_callback(self, regs):
+        signal = self._build_signal_from_regs(regs, self.signal_modbus_tcp_dir)
+        for k, label in MODBUS_LABELS.items():
+            v = signal.get(k, None)
+            if v is not None:
+                self.window._log(f"ℹ️ {label}: {v}")
+        print("on_send_signal", signal, "drive")
+        self.send_signal(signal, "drive")
+        # self.on_send_signal(signal, "drive")
     
     def read_holding_registers(self, address: int, slave_id, count: int = 1) -> list[bool] | None:
         # self.app._log(f"Leyendo el esclavo: {self.app.slave_id_var.get()}")

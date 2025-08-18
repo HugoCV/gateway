@@ -3,11 +3,21 @@ import threading
 import time
 from pymodbus.client import ModbusTcpClient
 
+
+LOGO_LABELS = {
+    "faultRec": "Voltage fault recovery time",
+    "faultRes": "Fault reset time",
+    "workHours": "Working hours",
+    "workMinutes": "Working minutes",
+    "faultLowWater": "Tank Low Water Level Fault",
+    "highPressureRes": "High-pressure reset delay",
+}
+
 class LogoModbusClient:
-    def __init__(self, app, log, read_callback):
+    def __init__(self, app, log, send_signal):
         self.log = log
         self.controller = app
-        self.read_callback = read_callback
+        self.send_signal = send_signal
         self.client = None
 
     def connect(self, host: str, port: int) -> bool:
@@ -113,10 +123,23 @@ class LogoModbusClient:
                         self.log(f"❌ Exception polling register {addr}: {e}")
                 time.sleep(interval)
                 # Llamada al callback del controlador si existe
-                self.read_callback(regs_group)
+                self._read_callback(regs_group)
         thread = threading.Thread(target=_poll, daemon=True)
         thread.start()
         return thread
+    
+    def _build_signal_from_regs(self, regs: dict[int, int]) -> dict:
+        return {name: regs.get(addr) for name, addr in self.signal_logo_dir.items()}
+
+    def _read_callback(self, regs):
+        signal = self._build_logo_signal_from_regs(regs)
+        for k, label in LOGO_LABELS.items():
+            v = signal.get(k, None)
+            if v is not None:
+                self.window._log(f"ℹ️ {label}: {v}")
+        # Publicación opcional por MQTT (grupo 'logo')
+        print("on_send_signal", signal, "logo")
+        self.send_signal(signal, "logo")
 
     def is_connected(self) -> bool:
         """Comprueba si la conexión TCP está abierta."""
@@ -134,34 +157,3 @@ class LogoModbusClient:
             except Exception:
                 pass
 
-
-
-
-
-# # drivers/logo_http.py
-# import requests
-
-# class LogoHttpClient:
-#     def __init__(self, base_url, username=None, password=None):
-#         self.base_url = base_url.rstrip('/')
-#         self.auth = (username, password) if username and password else None
-
-#     def get_page(self, path="/"):
-#         url = f"{self.base_url}{path}"
-#         try:
-#             response = requests.get(url, auth=self.auth, timeout=5)
-#             response.raise_for_status()
-#             return response.text
-#         except requests.RequestException as e:
-#             print(f"[LogoHttpClient] HTTP Error: {e}")
-#             return None
-
-#     def get_status_snapshot(self):
-#         """Example: parse a specific LOGO! Web page if you know the HTML layout."""
-#         html = self.get_page("/status.html")
-#         if not html:
-#             return None
-
-#         # NOTE: You must customize this depending on the LOGO! HTML content
-#         # Here we just return the raw HTML for now
-#         return html

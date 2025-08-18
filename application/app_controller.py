@@ -103,34 +103,30 @@ class AppController:
         # Handlers
         self.modbus_tcp_handler = ModbusTcp(
             self,
-            self.on_modbus_tcp_read_callback,
+            self.on_send_signal,
             self.window._log
         )
         self.modbus_serial_handler = ModbusSerial(
             self,
-            self.on_modbus_serial_read_callback,
+            self.on_send_signal,
             self.window._log,
         )
         self.logo_handler = LogoModbusClient(
             self,
-            self.window._log,
-            self.on_logo_read_callback
+            self.on_send_signal,
+            self.window._log
         )
         self.http_handler = HttpClient(
             self,
-            self.on_http_read_callback,
+            self.on_send_signal,
             self.window._log,
         )
-
         self.mqtt_handler = MqttClient(
             self.gateway_cfg,
             self.on_initial_load,
             log_callback=self.window._log,
             command_callback=self.on_receive_command
         )
-
-        self.devices = []
-        self.selected_device_handler = None
 
         # Usar constantes globales
         self.signal_modbus_tcp_dir = SIGNAL_MODBUS_TCP_DIR
@@ -142,10 +138,25 @@ class AppController:
 
         self.device_manager = DeviceManager(self.mqtt_handler, self.refresh_device_list, self.window._log)
         self.gateway_manager = GatewayManager(self.mqtt_handler, self._refresh_gateway_fields, self.window._log)
+        self.devices = []
+
 
     # === commands ===
-    def on_receive_command(self, device_id, command):
-        self.window._log(f"[CMD] device={device_id} -> {command}")
+    def on_receive_command(self, device_serial, command):
+        if not self.device_services:
+            self.window._log(f"no hay dispositivos conectados commando recivido {command}")
+
+        match command["action"]:
+            case "update-status":
+                # self.device_services[device_serial]
+                print("update-status :", command["params"]["value"], "device_serial", device_serial )
+            case "update-settings":
+                self.device_services[device_serial].update_connection_config(self.device_services)
+            case "update-config":
+                print("update-config", command["params"]["value"], "device_serial", device_serial)
+        
+        
+        # self.window._log(f"[CMD] device={device_id} -> {command}")
 
     # === initial load ===
     def on_initial_load(self):
@@ -163,53 +174,65 @@ class AppController:
         self.mqtt_handler.connect()
 
     def on_send_signal(self, results, group):
-        """
-        results: dict con lecturas
-        group:   'drive' | 'logo' | etc.
-        """
-        try:
-            if not isinstance(results, dict) or not results:
-                self.window._log("⚠️ Resultado vacío o no es dict; no se envía MQTT.")
-                return
+        self.mqtt_handler.on_send_signal(results, group)
 
-            serial = (self.window.serial_var.get() or "").strip()
-            if not serial:
-                self.window._log("⚠️ Serial vacío; se omite envío MQTT.")
-                return
+    # def on_send_signal(self, results, group):
+    #     """
+    #     results: dict con lecturas
+    #     group:   'drive' | 'logo' | etc.
+    #     """
+    #     try:
+    #         if not isinstance(results, dict) or not results:
+    #             self.window._log("⚠️ Resultado vacío o no es dict; no se envía MQTT.")
+    #             return
 
-            # Acepta organization_id/organizationId y gateway_id/gatewayId
-            org_id = self.gateway_cfg.get("organization_id") or self.gateway_cfg.get("organizationId")
-            gw_id  = self.gateway_cfg.get("gateway_id") or self.gateway_cfg.get("gatewayId")
-            if not org_id or not gw_id:
-                self.window._log(f"⚠️ Faltan IDs en gateway_cfg: org={org_id} gw={gw_id}")
-                return
+    #         serial = (self.window.serial_var.get() or "").strip()
+    #         if not serial:
+    #             self.window._log("⚠️ Serial vacío; se omite envío MQTT.")
+    #             return
 
-            topic_info = {
-                "serial_number":  serial,
-                "organization_id": org_id,
-                "gateway_id":      gw_id,
-            }
-            signal = {"group": group, "payload": results}
-            self.mqtt_handler.send_signal(topic_info, signal)
-        except Exception as e:
-            # mensaje correcto para esta función
-            self.window._log(f"❌ on_send_signal error: {e}")
+    #         # Acepta organization_id/organizationId y gateway_id/gatewayId
+    #         org_id = self.gateway_cfg.get("organization_id") or self.gateway_cfg.get("organizationId")
+    #         gw_id  = self.gateway_cfg.get("gateway_id") or self.gateway_cfg.get("gatewayId")
+    #         if not org_id or not gw_id:
+    #             self.window._log(f"⚠️ Faltan IDs en gateway_cfg: org={org_id} gw={gw_id}")
+    #             return
+
+    #         topic_info = {
+    #             "serial_number":  serial,
+    #             "organization_id": org_id,
+    #             "gateway_id":      gw_id,
+    #         }
+    #         signal = {"group": group, "payload": results}
+    #         self.mqtt_handler.send_signal(topic_info, signal)
+    #     except Exception as e:
+    #         # mensaje correcto para esta función
+    #         self.window._log(f"❌ on_send_signal error: {e}")
 
     # === Devices ===
     def get_device_by_name(self, name):
         return next((d for d in self.device_manager.devices if d.get("name") == name), None)
 
-    def refresh_device_list(self, devices=[]):
-        self.start_all(devices)
-        self.devices = devices or []
-        names = [d.get("name", "") for d in self.devices]
+    def refresh_device_list(self, devices=None) -> None:
+        if devices is None:
+            devices = {}
+
+        self.devices = self.create_all_devices(devices)
+        
+        self.services = list(self.devices.values())
+        names = [svc.device["name"] for svc in self.services]
         self.window.device_combo["values"] = names
         if names:
             self.window.device_combo.current(0)
-            self.update_device_fields(self.devices[0])
+            print("entra a names", self.services[0])
+            self.update_device_fields(self.services[0])
+        else:
+            print("entra al else")
+            self.window.device_combo.set("")
+            self.update_device_fields({})
 
-    def start_all(self, devices):
-        self.device_services = {}
+    def create_all_devices(self, devices):
+        device_services = {}
         for dev in devices:
             ds = DeviceService(
                 mqtt_handler=self.mqtt_handler,
@@ -223,8 +246,8 @@ class AppController:
                 modbus_labels=MODBUS_LABELS,
                 logo_labels=LOGO_LABELS,
             )
-            ds.start()
-            self.device_services[ds.device_id] = ds
+            device_services[ds.serial] = ds
+        return device_services
 
     def on_select_device(self, event=None):
         selected = self.window.selected_device_var.get()
@@ -234,61 +257,98 @@ class AppController:
             return
         self.update_device_fields(device)
 
-    def update_device_fields(self, device):
-        cc = device.get("connectionConfig") or {}
-        self.window.device_name_var.set(device.get("name", ""))
-        self.window.serial_var.set(device.get("serialNumber", ""))
-        self.window.model_var.set(device.get("deviceModel", ""))
+    def update_device_fields(self, device_service) -> None:
+        """
+        Populate UI fields from either:
+        - a plain dict with a 'connectionConfig' key, or
+        - a DeviceService-like instance (has .device and .cc attributes).
 
-        self.window.http_ip_var.set(cc.get("host", ""))
-        self.window.http_port_var.set(cc.get("httpPort", ""))
-        self.window.serial_port_var.set(cc.get("serialPort", ""))
-        self.window.baudrate_var.set(cc.get("baudrate", ""))
-        self.window.slave_id_var.set(cc.get("slaveId", ""))
-        self.window.logo_ip_var.set(cc.get("logoIp", ""))
-        self.window.logo_port_var.set(cc.get("logoPort", ""))
-        self.window.tcp_ip_var.set(cc.get("host", ""))
-        self.window.tcp_port_var.set(cc.get("tcpPort", ""))
+        Prefers the DeviceService attributes when present:
+        name  -> service.device["name"] (fallback: service.device_id)
+        model -> service.model or service.device["deviceModel"]
+        serial-> service.serial or service.device["serialNumber"]
+        cc    -> service.cc
+        """
+        print("update_device_fields", device_service)
+        # Detect "service-like" object via duck typing to avoid imports/cycles
+        is_service_like = hasattr(device_service, "cc") or hasattr(device_service, "device")
+
+        if is_service_like:
+            svc = device_service
+            d = getattr(svc, "device", {}) or {}
+            cc = getattr(svc, "cc", {}) or {}
+
+            name   = d.get("name") or getattr(svc, "device_id", "")
+            model  = getattr(svc, "model", "") or d.get("deviceModel", "")
+            serial = getattr(svc, "serial", "") or d.get("serialNumber", "")
+        else:
+            
+            d = device_service or {}
+            cc = d.get("connectionConfig") or {}
+
+            name   = d.get("name", "")
+            model  = d.get("deviceModel", "")
+            serial = d.get("serialNumber", "")
+        self.selected_serial = serial
+        # Small helper: always set a string; empty string for None
+        def set_str(var, value):
+            var.set("" if value is None else str(value))
+
+        # Top-level device fields
+        set_str(self.window.device_name_var, name)
+        set_str(self.window.serial_var,      serial)
+        set_str(self.window.model_var,       model)
+
+        # Connection config fields (HTTP / TCP share 'host' unless you split them)
+        set_str(self.window.http_ip_var,     cc.get("host", ""))
+        set_str(self.window.http_port_var,   cc.get("httpPort", ""))
+        set_str(self.window.tcp_ip_var,      cc.get("host", ""))
+        set_str(self.window.tcp_port_var,    cc.get("tcpPort", ""))
+
+        # Serial / LOGO fields
+        set_str(self.window.serial_port_var, cc.get("serialPort", ""))
+        set_str(self.window.baudrate_var,    cc.get("baudrate", ""))
+        set_str(self.window.slave_id_var,    cc.get("slaveId", ""))
+        set_str(self.window.logo_ip_var,     cc.get("logoIp", ""))
+        set_str(self.window.logo_port_var,   cc.get("logoPort", ""))
 
     # === HTTP Client ===
     def on_connect_http(self):
-        ip = self.window.http_ip_var.get()
-        port = self.window.http_port_var.get()
-        if ip and port:
-            base_url = f"http://{ip}:{port}/api/dashboard"
-            self.http_handler.connect(base_url=base_url, interval=5)
-            self.http_handler.start_continuous_read()
-            self.window._log(f"🌐 HTTPClient conectado a: {base_url}")
-        else:
-            self.window._log("⚠️ IP o puerto HTTP no definidos.")
+        if not (svc := self.devices.get(self.selected_serial)):
+            self.window._log("⚠️ No device selected.")
+            return
+        svc.connect_http()
 
     def on_http_read_callback(self, results: dict) -> None:
         # Vuelve al hilo de Tkinter
-        self.window.after(0, lambda: self.on_send_signal(results, "drive"))
+        self.on_send_signal(results, "drive")
+        # self.window.after(0, lambda: self.on_send_signal(results, "drive"))
 
-    def on_multiple_http(self):
-        fault_history = self.http_handler.read_fault_history_sync()
-        if fault_history:
-            self.window._log(f"Historial recibido: {fault_history}")
-        else:
-            self.window._log("No se pudo obtener el historial.")
+    def on_http_read_fault(self):
+        if not (svc := self.devices.get(self.selected_serial)):
+            self.window._log("⚠️ No device selected.")
+            return
+        svc.read_http_fault()
+
 
     # === Utilidad: construir señal con escalas conocidas ===
     def _build_signal_from_regs(self, regs: dict[int, int], modbus_dir) -> dict:
         """
         Crea dict de señal a partir de registros, aplicando escalas definidas en MODBUS_SCALES.
         """
-        s = {}
-        for name, addr in modbus_dir.items():
-            v = regs.get(addr)
-            if v is None:
-                s[name] = None
-                continue
-            if name in MODBUS_SCALES:
-                s[name] = v * MODBUS_SCALES[name]
-            else:
-                s[name] = v
-        return s
+        print("no se debe usar esta funcion")
+        return
+        # s = {}
+        # for name, addr in modbus_dir.items():
+        #     v = regs.get(addr)
+        #     if v is None:
+        #         s[name] = None
+        #         continue
+        #     if name in MODBUS_SCALES:
+        #         s[name] = v * MODBUS_SCALES[name]
+        #     else:
+        #         s[name] = v
+        # return s
 
     # === Modbus Serial ===
     def on_connect_modbus_serial(self):
@@ -298,7 +358,6 @@ class AppController:
             baudrate=self.window.baudrate_var.get(),
             slave_id=self.window.slave_id_var.get(),
         )
-        self.selected_device_handler = self.modbus_serial_handler
 
     def on_set_remote_serial(self):
         self.modbus_serial_handler.write_register(address=4358, value=2)
@@ -342,7 +401,6 @@ class AppController:
 
         self.modbus_tcp_handler.connect(ip, port)
         self.modbus_tcp_handler.set_local()
-        self.selected_device_handler = self.modbus_tcp_handler
 
     def on_start_modbus_tcp(self):
         self.modbus_tcp_handler.start()
@@ -400,7 +458,6 @@ class AppController:
             host=self.window.logo_ip_var.get(),
             port=self.window.logo_port_var.get(),
         )
-        self.selected_device_handler = self.logo_handler
 
     def on_write_logo(self):
         self.logo_handler.write_single_register(1, 10)

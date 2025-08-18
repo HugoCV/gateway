@@ -66,7 +66,7 @@ def build_device_tab(app, parent):
 
     http_buttons = [
         ("Conectar", app.controller.on_connect_http),
-        ("Leer Multiple", app.controller.on_multiple_http),
+        ("Leer Fallas", app.controller.on_http_read_fault),
     ]
     for idx, (text, cmd) in enumerate(http_buttons):
         r = idx // wrap

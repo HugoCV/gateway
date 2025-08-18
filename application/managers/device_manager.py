@@ -25,9 +25,15 @@ class DeviceManager:
             self.log(f"⚠️ MQTT fetch failed: {e}")
             return None
     def set_devices(self, devices: list):
-        print("set_devices")
         self.devices = devices
         self.refresh_devices(devices)
+
+    def read_http_fault(self):
+        fault_history = self.http_handler.read_fault_history_sync()
+        if fault_history:
+            self.window._log(f"Historial recibido: {fault_history}")
+        else:
+            self.window._log("No se pudo obtener el historial.")
 
     def save_devices(self):
         """

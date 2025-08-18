@@ -5,14 +5,38 @@ from pymodbus.exceptions import ModbusException
 from serial import Serial
 from serial.rs485 import RS485Settings
 
+MODBUS_LABELS = {
+    "freqRef": "Referencia de frecuencia",
+    "accTime": "Tiempo de aceleración",
+    "decTime": "Tiempo de desaceleración",
+    "curr":    "Amperaje de salida",
+    "freq":    "Frecuencia de salida",
+    "volt":    "Voltaje de salida",
+    "voltDcLink": "Voltaje DC Link",
+    "power":   "Potencia en kW",
+    "stat":    "Estado",
+    "dir":     "Dirección",
+    "speed":   "Velocidad (rpm)",
+    "alarm":   "Alarma",
+    "temp":    "Temperatura",
+    "fault":   "Falla",
+}
+
+MODBUS_SCALES = {
+    "curr": 0.1,      # /10
+    "power": 0.1,     # /10
+    "freqRef": 0.01,  # /100
+    "freq": 0.01,     # /100
+}
+
 class ModbusSerial:
     """
     Manages a Modbus RTU connection over a serial port (RS-485).
     """
-    def __init__(self, app, set_registers, log=print):
+    def __init__(self, app, send_signal, log=print):
         self.app = app
         self.log = log
-        self.set_registers = set_registers
+        self.send_signal = send_signal
         self.client: ModbusSerialClient | None = None
         self._lock = threading.Lock()
 
@@ -201,4 +225,31 @@ class ModbusSerial:
             except Exception as e:
                 self.log(f"❌ Exception in custom function: {e}")
                 return None
+            
+    def _build_signal_from_regs(self, regs: dict[int, int], modbus_dir) -> dict:
+        """
+        Crea dict de señal a partir de registros, aplicando escalas definidas en MODBUS_SCALES.
+        """
+        s = {}
+        for name, addr in modbus_dir.items():
+            v = regs.get(addr)
+            if v is None:
+                s[name] = None
+                continue
+            if name in MODBUS_SCALES:
+                s[name] = v * MODBUS_SCALES[name]
+            else:
+                s[name] = v
+        return s
+
+            
+    def on_modbus_serial_read_callback(self, regs):
+        signal = self._build_signal_from_regs(regs, self.signal_modbus_serial_dir)
+        for k, label in MODBUS_LABELS.items():
+            v = signal.get(k, None)
+            if v is not None:
+                self.window._log(f"ℹ️ {label}: {v}")
+        # Publicación opcional por MQTT
+        print("on_send_signal", signal, "drive")
+        self.send_signal(signal, "drive")
     

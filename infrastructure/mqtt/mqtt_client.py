@@ -241,6 +241,40 @@ class MqttClient:
         self.log(f"📤 Signal → {topic}")
 
 
+    def on_send_signal(self, results, group):
+        """
+        results: dict con lecturas
+        group:   'drive' | 'logo' | etc.
+        """
+        try:
+            if not isinstance(results, dict) or not results:
+                self.log("⚠️ Resultado vacío o no es dict; no se envía MQTT.")
+                return
+
+            serial = (self.window.serial_var.get() or "").strip()
+            if not serial:
+                self.log("⚠️ Serial vacío; se omite envío MQTT.")
+                return
+
+            # Acepta organization_id/organizationId y gateway_id/gatewayId
+            org_id = self.gateway_cfg.get("organization_id") or self.gateway_cfg.get("organizationId")
+            gw_id  = self.gateway_cfg.get("gateway_id") or self.gateway_cfg.get("gatewayId")
+            if not org_id or not gw_id:
+                self.log(f"⚠️ Faltan IDs en gateway_cfg: org={org_id} gw={gw_id}")
+                return
+
+            topic_info = {
+                "serial_number":  serial,
+                "organization_id": org_id,
+                "gateway_id":      gw_id,
+            }
+            signal = {"group": group, "payload": results}
+            self.send_signal(topic_info, signal)
+        except Exception as e:
+            # mensaje correcto para esta función
+            self.log(f"❌ on_send_signal error: {e}")
+
+
     def request_gateway_config(self, cb):
         self.client.message_callback_add(self.gatewayRespTopic, cb)
         self.client.subscribe(self.gatewayRespTopic, qos=1)
