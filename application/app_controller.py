@@ -143,15 +143,14 @@ class AppController:
 
     # === commands ===
     def on_receive_command(self, device_serial, command):
-        if not self.device_services:
+        if not self.devices:
             self.window._log(f"no hay dispositivos conectados commando recivido {command}")
-
         match command["action"]:
             case "update-status":
                 # self.device_services[device_serial]
                 print("update-status :", command["params"]["value"], "device_serial", device_serial )
-            case "update-settings":
-                self.device_services[device_serial].update_connection_config(self.device_services)
+            case "update-connections":
+                self.devices[device_serial].update_connection_config(command["params"])
             case "update-config":
                 print("update-config", command["params"]["value"], "device_serial", device_serial)
         
@@ -242,6 +241,7 @@ class AppController:
                 modbus_scales=MODBUS_SCALES,
                 modbus_labels=MODBUS_LABELS,
                 logo_labels=LOGO_LABELS,
+                update_fields=self.update_device_fields
             )
             device_services[ds.serial] = ds
         return device_services
@@ -360,6 +360,7 @@ class AppController:
             self.window._log("⚠️ No device selected.")
             return
         self.window._log("tratando de conectar a travez de modbus serial")
+        svc._stop_modbus_serial()
         svc.start_modbus_serial()
     def on_set_remote_serial(self):
         if not (svc := self.devices.get(self.selected_serial)):
@@ -413,6 +414,11 @@ class AppController:
         self.modbus_tcp_handler.connect(ip, port)
         self.modbus_tcp_handler.set_local()
 
+    def on_connect_modbus_tcp(self):
+        if not (svc := self.devices.get(self.selected_serial)):
+            self.window._log("⚠️ No device selected.")
+            return
+        svc.start_modbus_tcp()
     def on_start_modbus_tcp(self):
         self.modbus_tcp_handler.start()
 

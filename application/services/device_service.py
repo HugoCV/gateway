@@ -45,6 +45,7 @@ class DeviceService:
         modbus_scales: Dict[str, float],
         modbus_labels: Dict[str, str],
         logo_labels: Dict[str, str],
+        update_fields,
         http_interval: float = 5.0,
         poll_interval: float = 0.5,
     ) -> None:
@@ -52,7 +53,7 @@ class DeviceService:
         self.gateway_cfg = gateway_cfg
         self.device = device or {}
         self.log = log
-
+        self.update_fields = update_fields
         self._lock = RLock()
 
         # Allowed connectionConfig keys
@@ -148,18 +149,18 @@ class DeviceService:
         self.tcp_poll = None
         self.serial_poll = None
 
-    def _start_http(self) -> None:
-        if self.cc.get("host") and self.cc.get("httpPort"):
-            try:
-                base_url = f"http://{self.cc['host']}:{self.cc['httpPort']}/api/dashboard"
-                self.http = HttpClient(self, self._on_http_read, self.log)
-                self.http.connect(base_url=base_url, interval=self.http_interval)
-                self.http.start_continuous_read()
-                self.log(f"🌐 HTTP connected: {base_url} ({self.device_id})")
-            except Exception as e:
-                self.log(f"⚠️ HTTP error ({self.device_id}): {e}")
+    # def connect_http(self) -> None:
+    #     if self.cc.get("host") and self.cc.get("httpPort"):
+    #         try:
+    #             base_url = f"http://{self.cc['host']}:{self.cc['httpPort']}/api/dashboard"
+    #             self.http = HttpClient(self, self._on_http_read, self.log)
+    #             self.http.connect(base_url=base_url, interval=self.http_interval)
+    #             self.http.start_continuous_read()
+    #             self.log(f"🌐 HTTP connected: {base_url} ({self.device_id})")
+    #         except Exception as e:
+    #             self.log(f"⚠️ HTTP error ({self.device_id}): {e}")
 
-    def _stop_http(self) -> None:
+    def disconnect_http(self) -> None:
         if self.http and hasattr(self.http, "stop"):
             try:
                 self.http.stop()
@@ -167,7 +168,7 @@ class DeviceService:
                 pass
         self.http = None
 
-    def _start_modbus_tcp(self) -> None:
+    def connect_modbus_tcp(self) -> None:
         if self.cc.get("host") and self.cc.get("tcpPort"):
             try:
                 self.modbus_tcp = ModbusTcp(self, self._on_modbus_tcp_read, self.log)
@@ -182,8 +183,10 @@ class DeviceService:
                 self.log(f"🔌 Modbus TCP connected: {self.cc['host']}:{self.cc['tcpPort']} ({self.device_id})")
             except Exception as e:
                 self.log(f"⚠️ Modbus TCP error ({self.device_id}): {e}")
+                
+    def start_modebus_tcp(self)-> None:
 
-    def _stop_modbus_tcp(self) -> None:
+    def disconnect_modbus_tcp(self) -> None:
         if self.modbus_tcp and hasattr(self.modbus_tcp, "stop"):
             try:
                 self.modbus_tcp.stop()
@@ -192,7 +195,7 @@ class DeviceService:
         self.modbus_tcp = None
         self.tcp_poll = None
 
-    def start_modbus_serial(self) -> None:
+    def connect_modbus_serial(self) -> None:
         if self.cc.get("serialPort") and self.cc.get("baudrate") and self.cc.get("slaveId") is not None:
             try:
                 self.modbus_serial = ModbusSerial(self, self.callback_signal, self.log)
@@ -254,7 +257,6 @@ class DeviceService:
         Update self.cc (connectionConfig) and restart only the connections that changed.
         """
         self.log(f"Se actualizarion las conexiones del dispositivo {self.serial}")
-        print(f"Se actualizarion las conexiones del dispositivo {self.serial}")
         if not isinstance(new_cfg, dict):
             self.log("⚠️ update_connection_config: invalid argument (dict expected).")
             return
@@ -274,29 +276,31 @@ class DeviceService:
                 elif v is not None:
                     self.cc[k] = v
 
-            changed_http = any(prev.get(k) != self.cc.get(k) for k in ("host", "httpPort"))
-            changed_tcp  = any(prev.get(k) != self.cc.get(k) for k in ("host", "tcpPort"))
-            changed_ser  = any(prev.get(k) != self.cc.get(k) for k in ("serialPort", "baudrate", "slaveId"))
-            changed_logo = any(prev.get(k) != self.cc.get(k) for k in ("logoIp", "logoPort"))
+            # changed_http = any(prev.get(k) != self.cc.get(k) for k in ("host", "httpPort"))
+            # changed_tcp  = any(prev.get(k) != self.cc.get(k) for k in ("host", "tcpPort"))
+            # changed_ser  = any(prev.get(k) != self.cc.get(k) for k in ("serialPort", "baudrate", "slaveId"))
+            # changed_logo = any(prev.get(k) != self.cc.get(k) for k in ("logoIp", "logoPort"))
 
-            if changed_http:
-                self.log(f"Restarting HTTP ({self.device_id}) due to config change.")
-                self._stop_http(); self._start_http()
+            # if changed_http:
+            #     self.log(f"Restarting HTTP ({self.device_id}) due to config change.")
+            #     self._stop_http(); self._start_http()
 
-            if changed_tcp:
-                self.log(f"Restarting Modbus TCP ({self.device_id}) due to config change.")
-                self._stop_modbus_tcp(); self._start_modbus_tcp()
+            # if changed_tcp:
+            #     self.log(f"Restarting Modbus TCP ({self.device_id}) due to config change.")
+            #     self._stop_modbus_tcp(); self._start_modbus_tcp()
 
-            if changed_ser:
-                self.log(f"Restarting Modbus Serial ({self.device_id}) due to config change.")
-                self._stop_modbus_serial(); self.start_modbus_serial()
+            # if changed_ser:
+            #     self.log(f"Restarting Modbus Serial ({self.device_id}) due to config change.")
+            #     self._stop_modbus_serial(); self.start_modbus_serial()
 
-            if changed_logo:
-                self.log(f"Restarting LOGO! ({self.device_id}) due to config change.")
-                self._stop_logo(); self._start_logo()
+            # if changed_logo:
+            #     self.log(f"Restarting LOGO! ({self.device_id}) due to config change.")
+            #     self._stop_logo(); self._start_logo()
 
-            if not any((changed_http, changed_tcp, changed_ser, changed_logo)):
-                self.log("ℹupdate_connection_config: no effective changes in endpoints.")
+            # if not any((changed_http, changed_tcp, changed_ser, changed_logo)):
+            #     self.log("ℹupdate_connection_config: no effective changes in endpoints.")
+        self.update_fields(self)
+        print("configuracion actual",self.cc)
 
     # ---------------------------
     # Read callbacks

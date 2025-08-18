@@ -81,14 +81,13 @@ class ModbusSerial:
             self.client = ModbusSerialClient(
                 port=self.port,              # p.ej. "/dev/ttyUSB0"
                 baudrate=self.baudrate,      # p.ej. 9600
-                parity="E",                  # típico en RTU (ajústalo a tu equipo)
+                parity="N",                  # típico en RTU (ajústalo a tu equipo)
                 stopbits=1,
                 bytesize=8,
                 timeout=3.0,
                 retries=3,
             )
             connected = self.client.connect()
-            print("connected", connected)
             if connected:
                 # Configure RS-485 settings on underlying transport
                 try:
@@ -103,9 +102,6 @@ class ModbusSerial:
                 except Exception as e:
                     self.log(f"⚠️ RS-485 mode not supported: {e}")
                 self.log(f"✅ Modbus RTU connected on {self.port}@{self.baudrate} (slave={self.slave_id})")
-                #self.client.write_register(4357,  3, device_id=1) 
-                #rq = self.client.write_register(address, 3, device_id=self.slave_id)
-
             else:
                 self.log(f"❌ Failed to connect Modbus RTU on {self.port}@{self.baudrate}")
             return connected
@@ -150,7 +146,7 @@ class ModbusSerial:
                 regs_group = {}
                 for addr in addresses:
                     try:
-                        regs = self.read_holding_registers(addr, 1, count=1)
+                        regs = self.read_holding_registers(addr, count=1)
                         if regs:
                             regs_group[addr] = regs[0]
                         # self.log(f"▶ Polled register {addr}: {regs}")
@@ -163,25 +159,25 @@ class ModbusSerial:
         thread.start()
         return thread
 
-    def read_holding_registers(self, address: int, slave_id, count: int = 1) -> list[bool] | None:
+    def read_holding_registers(self, address: int, count: int = 1) -> list[bool] | None:
         # self.app._log(f"Leyendo el esclavo: {self.app.slave_id_var.get()}")
-        """Reads `count` coils starting at `address`."""
+        """Reads `count` read_holding_registers starting at `address`."""
         print("connected", self.client.connected)
-        print(address, slave_id, count)
+        print(address, self.slave_id, count)
         if not self.client:
             self.log("⚠️ Client not connected. Call connect() first.")
             return None
         with self._lock:
             try:
-                rr = self.client.read_holding_registers(address, count=count, device_id=slave_id)
+                rr = self.client.read_holding_registers(address, count=count, device_id=self.slave_id)
                 print("rr", rr)
                 if rr and not rr.isError():
                     regs   = list(rr.registers)
                     status = getattr(rr, 'status', None)
                     return regs
-                self.log(f"❌ Error reading coils: {rr}")
+                self.log(f"❌ Error reading read_holding_registers: {rr}")
             except Exception as e:
-                self.log(f"❌ Exception reading coils: {e}")
+                self.log(f"❌ Exception reading read_holding_registers: {e}")
         return None
 
     def write_register(self, address: int, value: int, slave:int) -> bool:
@@ -276,8 +272,7 @@ class ModbusSerial:
         for k, label in MODBUS_LABELS.items():
             v = signal.get(k, None)
             if v is not None:
-                self.window._log(f"ℹ️ {label}: {v}")
+                self.log(f"ℹ️ {label}: {v}")
         # Publicación opcional por MQTT
-        print("on_send_signal", signal, "drive")
         self.send_signal(signal, "drive")
     
