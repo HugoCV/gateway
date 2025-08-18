@@ -224,10 +224,8 @@ class AppController:
         self.window.device_combo["values"] = names
         if names:
             self.window.device_combo.current(0)
-            print("entra a names", self.services[0])
             self.update_device_fields(self.services[0])
         else:
-            print("entra al else")
             self.window.device_combo.set("")
             self.update_device_fields({})
 
@@ -240,7 +238,6 @@ class AppController:
                 device=dev,
                 log=self.window._log,
                 signal_modbus_tcp_dir=SIGNAL_MODBUS_TCP_DIR,
-                signal_modbus_serial_dir=SIGNAL_MODBUS_SERIAL_DIR,
                 signal_logo_dir=SIGNAL_LOGO_DIR,
                 modbus_scales=MODBUS_SCALES,
                 modbus_labels=MODBUS_LABELS,
@@ -269,7 +266,6 @@ class AppController:
         serial-> service.serial or service.device["serialNumber"]
         cc    -> service.cc
         """
-        print("update_device_fields", device_service)
         # Detect "service-like" object via duck typing to avoid imports/cycles
         is_service_like = hasattr(device_service, "cc") or hasattr(device_service, "device")
 
@@ -351,7 +347,7 @@ class AppController:
         # return s
 
     # === Modbus Serial ===
-    def on_connect_modbus_serial(self):
+    def on_connect_modbus_serial_old(self):
         self.window._log("tratando de conectar a travez de modbus serial")
         self.modbus_serial_handler.connect(
             port=self.window.serial_port_var.get(),
@@ -359,8 +355,18 @@ class AppController:
             slave_id=self.window.slave_id_var.get(),
         )
 
+    def on_connect_modbus_serial(self):
+        if not (svc := self.devices.get(self.selected_serial)):
+            self.window._log("⚠️ No device selected.")
+            return
+        self.window._log("tratando de conectar a travez de modbus serial")
+        svc.start_modbus_serial()
     def on_set_remote_serial(self):
-        self.modbus_serial_handler.write_register(address=4358, value=2)
+        if not (svc := self.devices.get(self.selected_serial)):
+            self.window._log("⚠️ No device selected.")
+            return
+        #self.modbus_serial_handler.write_register(4357,  3, device_id=1)
+        self.modbus_serial_handler.write_register(address=4358, value=3, slave=1)
 
     def on_start_modbus_serial(self):
         self.modbus_serial_handler.write_register(897, self.window.slave_id_var.get(), 3)
@@ -374,12 +380,17 @@ class AppController:
         self.modbus_serial_handler.write_register(897, self.window.slave_id_var.get(), 2)
 
     def on_multiple_modbus_serial(self):
-        addresses = list(dict.fromkeys(self.signal_modbus_serial_dir.values()))
-        self.window._log(f"[Serial] Polling: {addresses}")
-        self.modbus_serial_thread = self.modbus_serial_handler.poll_registers(
-            addresses=addresses,
-            interval=0.5,
-        )
+        #self.window._log("on_multiple_modbus_serial")
+        #addresses = list(dict.fromkeys(self.signal_modbus_serial_dir.values()))
+        #self.window._log(f"[Serial] Polling: {addresses}")
+        #self.modbus_serial_thread = self.modbus_serial_handler.poll_registers(
+        #    addresses=addresses,
+        #    interval=0.5,
+        #)
+        if not (svc := self.devices.get(self.selected_serial)):
+            self.window._log("⚠️ No device selected.")
+            return
+        svc.multiple_modbus_serial_read()
 
     def on_modbus_serial_read_callback(self, regs):
         signal = self._build_signal_from_regs(regs, self.signal_modbus_serial_dir)

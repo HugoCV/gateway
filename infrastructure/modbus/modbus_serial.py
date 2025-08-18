@@ -29,6 +29,21 @@ MODBUS_SCALES = {
     "freq": 0.01,     # /100
 }
 
+SIGNAL_MODBUS_SERIAL_DIR = {
+    "freqRef": 4,
+    "accTime": 6,
+    "decTime": 7,
+    "curr": 8,
+    "freq": 9,
+    "volt": 10,
+    "power": 12,
+    "stat": 16,
+    "dir": 16,         # si cambia, actualiza aquí
+    "speed": 785,
+    "alarm": 815,
+    "temp": 860,
+}
+
 class ModbusSerial:
     """
     Manages a Modbus RTU connection over a serial port (RS-485).
@@ -64,12 +79,16 @@ class ModbusSerial:
         try:
             # Instantiate Modbus client (RTU mode)
             self.client = ModbusSerialClient(
-                port=self.port,
-                baudrate=self.baudrate,
-                timeout=timeout,
-                retries=3
+                port=self.port,              # p.ej. "/dev/ttyUSB0"
+                baudrate=self.baudrate,      # p.ej. 9600
+                parity="E",                  # típico en RTU (ajústalo a tu equipo)
+                stopbits=1,
+                bytesize=8,
+                timeout=3.0,
+                retries=3,
             )
             connected = self.client.connect()
+            print("connected", connected)
             if connected:
                 # Configure RS-485 settings on underlying transport
                 try:
@@ -81,10 +100,12 @@ class ModbusSerial:
                             delay_before_tx=None,
                             delay_before_rx=None
                         )
-                    self.client.write_register(4357,  3) 
                 except Exception as e:
                     self.log(f"⚠️ RS-485 mode not supported: {e}")
                 self.log(f"✅ Modbus RTU connected on {self.port}@{self.baudrate} (slave={self.slave_id})")
+                #self.client.write_register(4357,  3, device_id=1) 
+                #rq = self.client.write_register(address, 3, device_id=self.slave_id)
+
             else:
                 self.log(f"❌ Failed to connect Modbus RTU on {self.port}@{self.baudrate}")
             return connected
@@ -130,12 +151,14 @@ class ModbusSerial:
                 for addr in addresses:
                     try:
                         regs = self.read_holding_registers(addr, 1, count=1)
-                        regs_group[addr] = regs[0]
+                        if regs:
+                            regs_group[addr] = regs[0]
                         # self.log(f"▶ Polled register {addr}: {regs}")
                     except Exception as e:
                         self.log(f"❌ Exception polling register {addr}: {e}")
                 time.sleep(interval)
-                self.set_registers(regs_group)
+                print("continuous read")
+                self.on_modbus_serial_read_callback(regs_group)
         thread = threading.Thread(target=_poll, daemon=True)
         thread.start()
         return thread
@@ -143,23 +166,25 @@ class ModbusSerial:
     def read_holding_registers(self, address: int, slave_id, count: int = 1) -> list[bool] | None:
         # self.app._log(f"Leyendo el esclavo: {self.app.slave_id_var.get()}")
         """Reads `count` coils starting at `address`."""
+        print("connected", self.client.connected)
+        print(address, slave_id, count)
         if not self.client:
             self.log("⚠️ Client not connected. Call connect() first.")
             return None
         with self._lock:
             try:
-                rr = self.client.read_holding_registers(address, count=count)
+                rr = self.client.read_holding_registers(address, count=count, device_id=slave_id)
+                print("rr", rr)
                 if rr and not rr.isError():
                     regs   = list(rr.registers)
                     status = getattr(rr, 'status', None)
-                    # self.log(f"▶Registro={address}, Respuesta={regs}, Estado={status}")
                     return regs
                 self.log(f"❌ Error reading coils: {rr}")
             except Exception as e:
                 self.log(f"❌ Exception reading coils: {e}")
         return None
 
-    def write_register(self, address: int, value: int) -> bool:
+    def write_register(self, address: int, value: int, slave:int) -> bool:
         """
         Writes a single holding register at `address`.
 
@@ -172,7 +197,9 @@ class ModbusSerial:
             return False
 
         try:
-            rr = self.client.write_register(address, value)
+            print("before write", slave)
+            rr = self.client.write_register(address, value, device_id=slave)
+            print("RR", rr)
             if rr and not rr.isError():
                 self.log(f"▶ Escribio en registro {address} = {value}")
                 return True
@@ -244,7 +271,8 @@ class ModbusSerial:
 
             
     def on_modbus_serial_read_callback(self, regs):
-        signal = self._build_signal_from_regs(regs, self.signal_modbus_serial_dir)
+        self.log("on_modbus_serial_read_callback")
+        signal = self._build_signal_from_regs(regs, SIGNAL_MODBUS_SERIAL_DIR)
         for k, label in MODBUS_LABELS.items():
             v = signal.get(k, None)
             if v is not None:

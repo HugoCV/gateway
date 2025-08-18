@@ -7,6 +7,22 @@ from infrastructure.logo.logo_client import LogoModbusClient
 from infrastructure.modbus.modbus_tcp import ModbusTcp
 from infrastructure.modbus.modbus_serial import ModbusSerial
 
+
+SIGNAL_MODBUS_SERIAL_DIR = {
+    "freqRef": 4,
+    "accTime": 6,
+    "decTime": 7,
+    "curr": 8,
+    "freq": 9,
+    "volt": 10,
+    "power": 12,
+    "stat": 16,
+    "dir": 16,         # si cambia, actualiza aquí
+    "speed": 785,
+    "alarm": 815,
+    "temp": 860,
+}
+
 class DeviceService:
     """
     Per-device service that manages its own connections to:
@@ -25,7 +41,6 @@ class DeviceService:
         device: Dict[str, Any],
         log,
         signal_modbus_tcp_dir: Dict[str, int],
-        signal_modbus_serial_dir: Dict[str, int],
         signal_logo_dir: Dict[str, int],
         modbus_scales: Dict[str, float],
         modbus_labels: Dict[str, str],
@@ -48,7 +63,6 @@ class DeviceService:
         }
 
         self.signal_modbus_tcp_dir = signal_modbus_tcp_dir
-        self.signal_modbus_serial_dir = signal_modbus_serial_dir
         self.signal_logo_dir = signal_logo_dir
         self.modbus_scales = modbus_scales
         self.modbus_labels = modbus_labels
@@ -178,25 +192,31 @@ class DeviceService:
         self.modbus_tcp = None
         self.tcp_poll = None
 
-    def _start_modbus_serial(self) -> None:
+    def start_modbus_serial(self) -> None:
         if self.cc.get("serialPort") and self.cc.get("baudrate") and self.cc.get("slaveId") is not None:
             try:
-                self.modbus_serial = ModbusSerial(self, self._on_modbus_serial_read, self.log)
+                self.modbus_serial = ModbusSerial(self, self.callback_signal, self.log)
                 self.modbus_serial.connect(
                     port=self.cc["serialPort"],
                     baudrate=self.cc["baudrate"],
                     slave_id=self.cc["slaveId"],
                 )
-                addrs = list(dict.fromkeys(self.signal_modbus_serial_dir.values()))
-                self.serial_poll = self.modbus_serial.poll_registers(
-                    addresses=addrs, interval=self.poll_interval
-                )
-                self.log(
-                    f"🧵 Modbus Serial connected: {self.cc['serialPort']}@{self.cc['baudrate']} "
-                    f"(sid={self.cc['slaveId']}) ({self.device_id})"
-                )
             except Exception as e:
                 self.log(f"⚠️ Modbus Serial error ({self.device_id}): {e}")
+
+    def callback_signal(self, signal, device):
+        print(signal, device)
+
+
+    def multiple_modbus_serial_read(self):
+        addrs = list(dict.fromkeys(SIGNAL_MODBUS_SERIAL_DIR.values()))
+        self.serial_poll = self.modbus_serial.poll_registers(
+            addresses=addrs, interval=self.poll_interval
+        )
+        self.log(
+            f"🧵 Modbus Serial connected: {self.cc['serialPort']}@{self.cc['baudrate']} "
+            f"(sid={self.cc['slaveId']}) ({self.device_id})"
+        )
 
     def _stop_modbus_serial(self) -> None:
         if self.modbus_serial and hasattr(self.modbus_serial, "stop"):
@@ -269,7 +289,7 @@ class DeviceService:
 
             if changed_ser:
                 self.log(f"Restarting Modbus Serial ({self.device_id}) due to config change.")
-                self._stop_modbus_serial(); self._start_modbus_serial()
+                self._stop_modbus_serial(); self.start_modbus_serial()
 
             if changed_logo:
                 self.log(f"Restarting LOGO! ({self.device_id}) due to config change.")
@@ -294,7 +314,7 @@ class DeviceService:
         self._send_signal("drive", signal)
 
     def _on_modbus_serial_read(self, regs: Dict[int, int]) -> None:
-        signal = self._build_signal_from_regs(regs, self.signal_modbus_serial_dir)
+        signal = self._build_signal_from_regs(regs, SIGNAL_MODBUS_SERIAL_DIR)
         for k, label in self.modbus_labels.items():
             v = signal.get(k)
             if v is not None:
