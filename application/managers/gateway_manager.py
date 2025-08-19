@@ -21,7 +21,6 @@ class GatewayManager:
         # self._load_gateway()
     
     def set_gateway(self, gateway: dir):
-        print("gateway", gateway)
         self._gateway = gateway
         self.refresh_gateway(gateway)
         

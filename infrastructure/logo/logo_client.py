@@ -81,6 +81,19 @@ class LogoModbusClient:
             except Exception as e2:
                 self.log(f"❌ Retry write failed: {e2}")
         return False
+
+    def is_connected(self) -> bool:
+        """
+        Comprueba si la conexión Modbus TCP sigue activa.
+        """
+        if not self.client:
+            return False
+        try:
+            if hasattr(self.client, "is_socket_open"):
+                return self.client.is_socket_open()
+            return getattr(self.client, "connected", False)
+        except Exception:
+            return False
     
     def read_registers(self, start_address: int, count: int) -> list[int] | None:
         """

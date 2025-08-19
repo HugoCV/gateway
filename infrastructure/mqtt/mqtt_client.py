@@ -237,7 +237,6 @@ class MqttClient:
 
         topic = self._topic_signal(org_id, gw_id, serial)
         self._publish(topic, json.dumps(signal_info, default=str), qos=1)
-        print("signal enviada", signal_info)
         self.log(f"📤 Signal → {topic}")
 
 

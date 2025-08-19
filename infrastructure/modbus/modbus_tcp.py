@@ -43,6 +43,12 @@ SIGNAL_MODBUS_TCP_DIR = {
     "temp": 861,
 }
 
+STATUS_TYPES_DIR = {
+    0 : "stop",
+    1 : "fault",
+    2 : "run"
+}
+
 class ModbusTcp:
     def __init__(self, controller, send_signal, log):
         self.send_signal = send_signal
@@ -50,9 +56,11 @@ class ModbusTcp:
         self.client = None
         self.log = log
         self._lock = threading.Lock()
+        self.poll_interval = 0.5
 
-    def connect(self, ip, port) -> bool:
-        self.log(f"🔌 Iniciando conexión {ip}:{port}")
+    def connect(self, ip, port, slave_id) -> bool:
+        self.log(f"🔌 Iniciando conexión Modbus TCP a {ip}:{port}")
+        self.slave_id = slave_id
         try:
             port = int(port)
 
@@ -63,7 +71,7 @@ class ModbusTcp:
                 except Exception:
                     pass
                 self.client = None
-
+            
             self.client = ModbusTcpClient(host=ip, port=port, timeout=3.0)
 
             if not self.client.connect():
@@ -75,8 +83,6 @@ class ModbusTcp:
                 self.client = None
                 return False
 
-            self.log(f"✅ Conectado a {ip}:{port}")
-
         except Exception as e:
             self.log(f"❌ Error conectando a {ip}:{port}: {e}")
             try:
@@ -87,43 +93,75 @@ class ModbusTcp:
             self.client = None
             return False
 
-    def turn_on(self):
-        if self.client:
-            result = self.client.write_register(address=898, value=3)
-            self.log(f"resultado {result}")
-            if not result.isError():
-                self.log("✔ Comando enviado: RUN")
+    def turn_on(self) -> bool:
+        self.set_remote()
+        return self.write_register(address=898, value=3)
 
-    def turn_off(self):
-        if self.client:
-            result = self.client.write_register(address=898, value=0)
-            self.log(f"resultado {result}")
-            if not result.isError():
-                self.log("✔ Comando enviado: STOP")
+    def turn_off(self) -> bool:
+        self.set_remote()
+        is_turned_off = self.write_register(address=898, value=0)
+        self.set_local()
+        return is_turned_off
+
+    def is_connected(self) -> bool:
+        """
+        Verifica si el cliente Modbus TCP sigue conectado.
+        """
+        if not self.client:
+            return False
+        try:
+            # pymodbus 3.x
+            if hasattr(self.client, "is_socket_open"):
+                return self.client.is_socket_open()
+            # fallback en otras versiones
+            return getattr(self.client, "connected", False)
+        except Exception:
+            return False
     
     def restart(self):
         if self.client:
-            result1 = self.client.write_register(address=901, value=1)
-            result2 = self.client.write_register(address=901, value=0)
-            result3 = self.client.write_register(address=898, value=2)
+            result1 = self.write_register(address=901, value=1)
+            result2 = self.write_register(address=901, value=0)
+            result3 = self.write_register(address=898, value=2)
             
             if not result1.isError() and not result2.isError() and not result3.isError():
                 self.log("✔ Comando enviado: RESET")
 
-    def set_local(self):
-        rr = self.client.write_register(address=4358, value=4)
-        if rr is None or rr.isError():
-            self.log("⚠️ Conectado, pero falló write_register(4358, 2)")
-        else:
-            self.log("📝 write_register(4358, 2) OK")
+    def set_local(self) -> bool:
+        is_local = self.write_register(address=4358, value=2)
+        if(is_local):
+            self.log("no se pudo poner en remoto") 
+        return is_local
 
-        return True
-
-    def set_remote(self):
-        self.remoto = self.client.write_register(address=4358, value=4)
+    def set_remote(self) -> bool:
+        is_remote = self.write_register(address=4358, value=4)
+        if(is_remote):
+            self.log("no se pudo poner en remoto") 
+        return is_remote
         
-    def write_register(self, address: int, value: int):
-        self.client.write_register(address=address, value=value)
+    def write_register(self, address: int, value: int) -> bool:
+        """
+        Writes a single holding register at `address`.
+
+        :param address: Register address to write
+        :param value:   Integer value to write (0–0xFFFF)
+        :returns:       True on success, False otherwise
+        """
+        if not self.client:
+            self.log("⚠️ Client not connected. Call connect() first.")
+            return False
+
+        try:
+            rr = self.client.write_register(address, value, device_id=self.slave_id)
+            if rr and not rr.isError():
+                self.log(f"▶ Escribio en registro {address} = {value}")
+                return True
+            else:
+                self.log(f"❌ Error writing register {address}: {rr}")
+        except Exception as e:
+            self.log(f"❌ Exception writing register {address}: {e}")
+
+        return False
 
     def start_continuous_read(self):
         def read_loop():
@@ -135,7 +173,6 @@ class ModbusTcp:
         threading.Thread(target=read_loop, daemon=True).start()
 
     def start_reading(self)-> None:
-        self.set_local()
         addrs = list(dict.fromkeys(SIGNAL_MODBUS_TCP_DIR.values()))
         self.tcp_poll = self.poll_registers(
             addresses=addrs, interval=self.poll_interval
@@ -184,17 +221,13 @@ class ModbusTcp:
                 s[name] = v * MODBUS_SCALES[name]
             else:
                 s[name] = v
+            if(name == "stat"):
+                s[name] = STATUS_TYPES_DIR[v]
         return s
     
     def _read_callback(self, regs):
         signal = self._build_signal_from_regs(regs, SIGNAL_MODBUS_TCP_DIR)
-        for k, label in MODBUS_LABELS.items():
-            v = signal.get(k, None)
-            if v is not None:
-                self.window._log(f"ℹ️ {label}: {v}")
-        print("on_send_signal", signal, "drive")
         self.send_signal(signal, "drive")
-        # self.on_send_signal(signal, "drive")
     
     def read_holding_registers(self, address: int, slave_id, count: int = 1) -> list[bool] | None:
         # self.app._log(f"Leyendo el esclavo: {self.app.slave_id_var.get()}")
@@ -214,3 +247,4 @@ class ModbusTcp:
             except Exception as e:
                 self.log(f"❌ Exception reading coils: {e}")
         return None
+

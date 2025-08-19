@@ -96,31 +96,8 @@ class AppController:
 
     def __init__(self, window):
         self.window = window
+        self.log = window._log
         self.gateway_cfg = get_gateway()
-
-        
-
-        # Handlers
-        self.modbus_tcp_handler = ModbusTcp(
-            self,
-            self.on_send_signal,
-            self.window._log
-        )
-        self.modbus_serial_handler = ModbusSerial(
-            self,
-            self.on_send_signal,
-            self.window._log,
-        )
-        self.logo_handler = LogoModbusClient(
-            self,
-            self.on_send_signal,
-            self.window._log
-        )
-        self.http_handler = HttpClient(
-            self,
-            self.on_send_signal,
-            self.window._log,
-        )
         self.mqtt_handler = MqttClient(
             self.gateway_cfg,
             self.on_initial_load,
@@ -148,7 +125,16 @@ class AppController:
         match command["action"]:
             case "update-status":
                 # self.device_services[device_serial]
-                print("update-status :", command["params"]["value"], "device_serial", device_serial )
+                if not (svc := self.devices.get(device_serial)):
+                    self.window._log("⚠️ No device selected.")
+                    return
+                if(command["params"]["value"] == "on"):
+                    self.log(f"El dispositivo {svc.name} se mando a encender")
+                    svc.turn_on()
+                else:
+                    self.log(f"El dispositivo {svc.name} se mando a apagar")
+                    svc.turn_off()
+
             case "update-connections":
                 self.devices[device_serial].update_connection_config(command["params"])
             case "update-config":
@@ -172,9 +158,6 @@ class AppController:
     def on_connect_mqtt(self):
         self.mqtt_handler.connect()
 
-    def on_send_signal(self, results, group):
-        self.mqtt_handler.on_send_signal(results, group)
-
     # === Devices ===
     def get_device_by_name(self, name):
         return next((d for d in self.device_manager.devices if d.get("name") == name), None)
@@ -189,6 +172,7 @@ class AppController:
         self.window.device_combo["values"] = names
         if names:
             self.window.device_combo.current(0)
+            self.selected_serial = self.services[0].serial
             self.update_device_fields(self.services[0])
         else:
             self.window.device_combo.set("")
@@ -209,7 +193,9 @@ class AppController:
 
     def on_select_device(self, event=None):
         selected = self.window.selected_device_var.get()
-        device = self.get_device_by_name(selected)
+        deviceDir = self.get_device_by_name(selected)
+        device = self.devices.get(deviceDir["serialNumber"])
+        self.selected_serial = device.serial
         if not device:
             self.window._log("Dispositivo no encontrado.")
             return
@@ -227,7 +213,10 @@ class AppController:
         serial-> service.serial or service.device["serialNumber"]
         cc    -> service.cc
         """
-        # Detect "service-like" object via duck typing to avoid imports/cycles
+        
+        if(self.selected_serial != device_service.serial):
+            return 
+            
         is_service_like = hasattr(device_service, "cc") or hasattr(device_service, "device")
 
         if is_service_like:
@@ -276,11 +265,6 @@ class AppController:
             return
         svc.connect_http()
 
-    def on_http_read_callback(self, results: dict) -> None:
-        # Vuelve al hilo de Tkinter
-        self.on_send_signal(results, "drive")
-        # self.window.after(0, lambda: self.on_send_signal(results, "drive"))
-
     def on_http_read_fault(self):
         if not (svc := self.devices.get(self.selected_serial)):
             self.window._log("⚠️ No device selected.")
@@ -289,44 +273,41 @@ class AppController:
 
 
     # === Modbus Serial ===
-    def on_connect_modbus_serial_old(self):
-        self.window._log("tratando de conectar a travez de modbus serial")
-        self.modbus_serial_handler.connect(
-            port=self.window.serial_port_var.get(),
-            baudrate=self.window.baudrate_var.get(),
-            slave_id=self.window.slave_id_var.get(),
-        )
-
     def on_connect_modbus_serial(self):
         if not (svc := self.devices.get(self.selected_serial)):
             self.window._log("⚠️ No device selected.")
             return
         self.window._log("tratando de conectar a travez de modbus serial")
-        svc._stop_modbus_serial()
-        svc.start_modbus_serial()
-    def on_set_remote_serial(self):
+        svc.disconnect_modbus_serial()
+        svc.connect_modbus_serial()
+
+    def on_turn_on_modbus_serial(self):
         if not (svc := self.devices.get(self.selected_serial)):
             self.window._log("⚠️ No device selected.")
             return
-        #self.modbus_serial_handler.write_register(4357,  3, device_id=1)
-        self.modbus_serial_handler.write_register(address=4358, value=3, slave=1)
+        self.window._log("ratando de encener a travez de modbus serial")
+        svc.turn_on_modbus_serial()
+        # self.modbus_serial_handler.write_register(897, self.window.slave_id_var.get(), 3)
 
-    def on_start_modbus_serial(self):
-        self.modbus_serial_handler.write_register(897, self.window.slave_id_var.get(), 3)
+    def on_turn_off_modbus_serial(self):
+        if not (svc := self.devices.get(self.selected_serial)):
+            self.window._log("⚠️ No device selected.")
+            return
+        self.window._log("ratando de apagar a travez de modbus serial")
+        svc.turn_off_modbus_serial()
 
-    def on_stop_modbus_serial(self):
-        self.modbus_serial_handler.write_register(897, self.window.slave_id_var.get(), 0)
-
-    def on_reset_modbus_serial(self):
-        self.modbus_serial_handler.write_register(900, self.window.slave_id_var.get(), 1)
-        self.modbus_serial_handler.write_register(900, self.window.slave_id_var.get(), 0)
-        self.modbus_serial_handler.write_register(897, self.window.slave_id_var.get(), 2)
+    def on_restart_modbus_serial(self):
+        if not (svc := self.devices.get(self.selected_serial)):
+            self.window._log("⚠️ No device selected.")
+            return
+        self.window._log("ratando de apagar a travez de modbus serial")
+        svc.restart_modbus_seial()
 
     def on_multiple_modbus_serial(self):
         if not (svc := self.devices.get(self.selected_serial)):
             self.window._log("⚠️ No device selected.")
             return
-        svc.multiple_modbus_serial_read()
+        svc.start_reading_modbus_serial()
 
     # === Modbus TCP ===
     def on_connect_modbus_tcp(self):
@@ -334,61 +315,53 @@ class AppController:
             self.window._log("⚠️ No device selected.")
             return
         svc.connect_modbus_tcp()
+        
 
-    def on_start_modbus_tcp(self):
+    def on_turn_on_modbus_tcp(self):
         if not (svc := self.devices.get(self.selected_serial)):
             self.window._log("⚠️ No device selected.")
             return
-        svc.connect_modbus_tcp()
+        svc.turn_on_modbus_tcp()
 
-    def on_stop_modbus_tcp(self):
-        self.modbus_tcp_handler.stop()
+    def on_turn_off_modbus_tcp(self):
+        if not (svc := self.devices.get(self.selected_serial)):
+            self.window._log("⚠️ No device selected.")
+            return
+        svc.turn_off_modbus_tcp()
 
     def on_reset_modbus_tcp(self):
-        self.modbus_tcp_handler.set_remote()
-
-    def on_custom_modbus_tcp(self):
-        self.modbus_tcp_handler.set_local()
-
-    def on_start_modbus_tcp(self):
         if not (svc := self.devices.get(self.selected_serial)):
             self.window._log("⚠️ No device selected.")
             return
-        svc.connect_http()
+        svc.turn_off_modbus_tcp()
 
-    def on_set_remote_tcp(self):
-        self.modbus_tcp_handler.write_register(address=4358, value=2)
+    def on_read_modbus_tcp(self):
+        if not (svc := self.devices.get(self.selected_serial)):
+            self.window._log("⚠️ No device selected.")
+            return
+        svc.start_reading_modbus_tcp()
 
     # === Logo ===
-    def on_multiple_logo(self):
-        addresses = list(dict.fromkeys(self.signal_logo_dir.values()))
-        self.window._log(f"[LOGO] Polling: {addresses}")
-        self.logo_handler.poll_registers(addresses)
+    def on_read_logo(self):
+        if not (svc := self.devices.get(self.selected_serial)):
+            self.window._log("⚠️ No device selected.")
+            return
+        svc.start_reading_logo
 
     def on_connect_logo(self):
         """Conecta a dispositivo Logo via TCP."""
-        self.logo_handler.connect(
-            host=self.window.logo_ip_var.get(),
-            port=self.window.logo_port_var.get(),
-        )
+        if not (svc := self.devices.get(self.selected_serial)):
+            self.window._log("⚠️ No device selected.")
+            return
+        svc.connect_logo()
 
-    def on_write_logo(self):
-        self.logo_handler.write_single_register(1, 10)
-
-    def on_read_logo(self):
-        address = 6
-        succeded = self.logo_handler.read_registers(address, 1)
-        if succeded:
-            return self.window._log(f"se leyo en la direccion {address}")
-        self.window._log("Error al leer desde el LOGO")
-
-    def on_stop_logo(self):
+    def on_turn_off_logo(self):
         succeded = self.logo_handler.write_coil(4, 1)
         if succeded:
             return self.window._log("Se apago desde el logo")
         self.window._log("Error al apagar desde el logo")
 
-    def on_start_logo(self):
+    def on_turn_on_logo(self):
         succeded = self.logo_handler.write_coil(3, 1)
         if succeded:
             return self.window._log("Se encendio desde el logo")

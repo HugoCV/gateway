@@ -103,11 +103,10 @@ def build_device_tab(app, parent):
 
     modbus_buttons = [
         ("Conectar", app.controller.on_connect_modbus_serial),
-        ("Iniciar",  app.controller.on_start_modbus_serial),
-        ("Apagar",   app.controller.on_stop_modbus_serial),
-        ("Reiniciar",app.controller.on_reset_modbus_serial),
-        ("Leer Multiple", app.controller.on_multiple_modbus_serial),
-        ("Local", app.controller.on_set_remote_serial),
+        ("Encender",  app.controller.on_turn_on_modbus_serial),
+        ("Apagar",   app.controller.on_turn_off_modbus_serial),
+        ("Reiniciar",app.controller.on_restart_modbus_serial),
+        ("Leer", app.controller.on_multiple_modbus_serial),
     ]
     for idx, (text, cmd) in enumerate(modbus_buttons):
         r = idx // wrap
@@ -139,11 +138,10 @@ def build_device_tab(app, parent):
 
     tcp_buttons = [
         ("Conectar", app.controller.on_connect_modbus_tcp),
-        ("Iniciar",  app.controller.on_start_modbus_tcp),
-        ("Apagar",   app.controller.on_stop_modbus_tcp),
+        ("Encender",  app.controller.on_turn_on_modbus_tcp),
+        ("Apagar",   app.controller.on_turn_off_modbus_tcp),
         ("Reiniciar",app.controller.on_reset_modbus_tcp),
-        ("Leer Multiple", app.controller.on_start_modbus_tcp),
-        ("Local", app.controller.on_set_remote_tcp),
+        ("Leer", app.controller.on_read_modbus_tcp),
     ]
     for idx, (text, cmd) in enumerate(tcp_buttons):
         r = idx // wrap
@@ -173,11 +171,10 @@ def build_device_tab(app, parent):
     tcp_btn_frame = ttk.Frame(logo_tcp_frame)
     tcp_btn_frame.grid(row=2, column=0, columnspan=2, pady=(10, 0))
     for text, command in [
-        ("Connect", app.controller.on_connect_logo),
-        ("Start", app.controller.on_start_logo),
-        ("Stop", app.controller.on_stop_logo),
+        ("Conectar", app.controller.on_connect_logo),
+        ("Encender", app.controller.on_turn_on_logo),
+        ("Apagar", app.controller.on_turn_off_logo),
         ("Leer", app.controller.on_read_logo),
-        ("Leer multiple", app.controller.on_multiple_logo)
     ]:
         ttk.Button(tcp_btn_frame, text=text, command=command).pack(side="left", padx=5)
 

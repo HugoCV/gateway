@@ -36,6 +36,7 @@ class DeviceService:
         self.log = log
         self.update_fields = update_fields
         self._lock = RLock()
+        self.http_interval =0.5
 
         # Allowed connectionConfig keys
         self._ALLOWED_CC_KEYS = {
@@ -51,19 +52,22 @@ class DeviceService:
             or self.device.get("name")
             or ""
         )
+        self.name = self.device.get("name", "desconocido")
         self.model: str = self.device.get("deviceModel", "")
         self.serial: str = self.device.get("serialNumber", "")
         self.cc: Dict[str, Any] = self.device.get("connectionConfig") or {}
 
         # Per-device handlers
-        self.http: Optional[HttpClient] = None
-        self.modbus_tcp: Optional[ModbusTcp] = None
-        self.modbus_serial: Optional[ModbusSerial] = None
-        self.logo: Optional[LogoModbusClient] = None
+        # self.http: Optional[HttpClient] = None
+        # self.modbus_tcp: Optional[ModbusTcp] = None
+        # self.modbus_serial: Optional[ModbusSerial] = None
+        # self.logo: Optional[LogoModbusClient] = None
 
-        # Polling handlers
-        self.tcp_poll = None
-        self.serial_poll = None
+        base_url = f"http://{self.cc['host']}:{self.cc['httpPort']}/api/dashboard"
+        self.http = HttpClient(self, self._send_signal, self.log)
+        self.modbus_serial = ModbusSerial(self, self._send_signal, self.log)
+        self.modbus_tcp = ModbusTcp(self, self._send_signal, self.log)
+        self.logo = LogoModbusClient(self, self.log, self._send_signal)
 
         self.alive: bool = False
 
@@ -92,6 +96,39 @@ class DeviceService:
         self.alive = False
         self.log(f"⏹️ Stopping DeviceService for {self.device_id}")
 
+    def turn_off(self):
+        changed = False
+        if(self.modbus_tcp.is_connected()):
+            changed = self.modbus_tcp.turn_off()
+        if(self.modbus_serial.is_connected() and not changed):
+            changed = self.modbus_serial.turn_off()
+        if(changed):
+            return self.log(f"se apago el dispositivo {self.name}")
+        return self.log(f"No se pudo apagar el dispositivo {self.name}")
+
+    def turn_on(self):
+        changed = False
+        if(self.modbus_tcp.is_connected()):
+            changed = self.modbus_tcp.turn_on()
+        if(self.modbus_serial.is_connected() and not changed):
+            changed = self.modbus_serial.turn_on()
+        if(changed):
+            return self.log(f"se encendio el dispositvio {self.name}")
+        return self.log(f"No se pudo encender el dispositvio {self.name}")
+
+
+    def disconnect_all_devices(self) -> None:
+        """
+        Disconnect all device services.
+        """
+        self.log("⏹️ Desconectando...")
+        dev_service.stop()
+        dev_service.disconnect_http()
+        dev_service.disconnect_modbus_tcp()
+        dev_service.disconnect_modbus_serial()
+        dev_service.disconnect_logo()
+        self.log("✅ Desconectado.")
+
     # ---------------------------
     # Connection helpers (connect/disconnect)
     # ---------------------------
@@ -100,8 +137,6 @@ class DeviceService:
     def connect_http(self) -> None:
         if self.cc.get("host") and self.cc.get("httpPort"):
             try:
-                base_url = f"http://{self.cc['host']}:{self.cc['httpPort']}/api/dashboard"
-                self.http = HttpClient(self, self._send_signal, self.log)
                 self.http.connect(base_url=base_url, interval=self.http_interval)
                 self.log(f"🌐 HTTP connected: {base_url} ({self.device_id})")
             except Exception as e:
@@ -129,24 +164,29 @@ class DeviceService:
                 self.modbus_tcp.stop()
             except Exception:
                 pass
-        self.modbus_tcp = None
-        self.tcp_poll = None
     
     def connect_modbus_tcp(self) -> None:
-        if self.cc.get("host") and self.cc.get("tcpPort"):
+        if self.cc.get("host") and self.cc.get("tcpPort") and self.cc.get("slaveId"):
             try:
-                self.modbus_tcp = ModbusTcp(self, self._send_signal, self.log)
-                self.modbus_tcp.connect(self.cc["host"], self.cc["tcpPort"])
+                self.modbus_tcp.connect(self.cc["host"], self.cc["tcpPort"], self.cc["slaveId"])
                 self.log(f"🔌 Modbus TCP connected: {self.cc['host']}:{self.cc['tcpPort']} ({self.device_id})")
             except Exception as e:
                 self.log(f"⚠️ Modbus TCP error ({self.device_id}): {e}")
+    def turn_on_modbus_tcp(self):
+        self.modbus_tcp.turn_on()
+
+    def turn_off_modbus_tcp(self):
+        self.modbus_tcp.turn_off()
+
+    def restart_modbus_seial(self):
+        self.modbus_tcp.restart()
 
 
     # Serial
     def connect_modbus_serial(self) -> None:
+        print("connect_modbus_serial", self.modbus_serial)
         if self.cc.get("serialPort") and self.cc.get("baudrate") and self.cc.get("slaveId") is not None:
             try:
-                self.modbus_serial = ModbusSerial(self, self._send_signal, self.log)
                 self.modbus_serial.connect(
                     port=self.cc["serialPort"],
                     baudrate=self.cc["baudrate"],
@@ -161,23 +201,27 @@ class DeviceService:
                 self.modbus_serial.stop()
             except Exception:
                 pass
-        self.modbus_serial = None
-        self.serial_poll = None
 
     def start_reading_modbus_serial(self):
         self.modbus_serial.start_reading()
+
+    def turn_on_modbus_serial(self):
+        self.modbus_serial.turn_on()
+
+    def turn_off_modbus_serial(self):
+        self.modbus_serial.turn_off()
+    
 
     # Logo
     def connect_logo(self) -> None:
         if self.cc.get("logoIp") and self.cc.get("logoPort"):
             try:
-                self.logo = LogoModbusClient(self, self.log, self._send_signal)
                 self.logo.connect(host=self.cc["logoIp"], port=self.cc["logoPort"])
                 self.log(f"🧱 LOGO connected: {self.cc['logoIp']}:{self.cc['logoPort']} ({self.device_id})")
             except Exception as e:
                 self.log(f"⚠️ LOGO error ({self.device_id}): {e}")
 
-    def start_reading_log(self) -> None:
+    def start_reading_logo(self) -> None:
         if(self.logo):
             self.logo.start_reading()
 
@@ -240,7 +284,6 @@ class DeviceService:
             # if not any((changed_http, changed_tcp, changed_ser, changed_logo)):
             #     self.log("ℹupdate_connection_config: no effective changes in endpoints.")
         self.update_fields(self)
-        print("configuracion actual",self.cc)
 
 
     # ---------------------------
@@ -251,7 +294,7 @@ class DeviceService:
         gw_id  = self.gateway_cfg.get("gateway_id") or self.gateway_cfg.get("gatewayId")
         return org_id, gw_id
 
-    def _send_signal(self, group: str, results: Dict[str, Any]) -> None:
+    def _send_signal(self, results: Dict[str, Any], group: str) -> None:
         """Publish via MQTT with the device's serial number."""
         try:
             if not isinstance(results, dict) or not results:
@@ -266,6 +309,7 @@ class DeviceService:
                 "organization_id": org_id,
                 "gateway_id":      gw_id,
             }
+            print("results", results)
             payload = {"group": group, "payload": results}
             self.mqtt.send_signal(topic_info, payload)
         except Exception as e:

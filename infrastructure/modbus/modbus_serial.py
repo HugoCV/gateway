@@ -38,10 +38,16 @@ SIGNAL_MODBUS_SERIAL_DIR = {
     "volt": 10,
     "power": 12,
     "stat": 16,
-    "dir": 16,         # si cambia, actualiza aquí
+    "dir": 18,       
     "speed": 785,
     "alarm": 815,
     "temp": 860,
+}
+
+STATUS_TYPES_DIR = {
+    0 : "stop",
+    1 : "fault",
+    2 : "run"
 }
 
 class ModbusSerial:
@@ -54,6 +60,7 @@ class ModbusSerial:
         self.send_signal = send_signal
         self.client: ModbusSerialClient | None = None
         self._lock = threading.Lock()
+        self.poll_interval = 0.5
 
     def connect(
         self,
@@ -153,14 +160,27 @@ class ModbusSerial:
                     except Exception as e:
                         self.log(f"❌ Exception polling register {addr}: {e}")
                 time.sleep(interval)
-                print("continuous read")
                 self.on_modbus_serial_read_callback(regs_group)
         thread = threading.Thread(target=_poll, daemon=True)
         thread.start()
         return thread
 
+    def is_connected(self) -> bool:
+        """
+        Check if the Modbus client is currently connected.
+        """
+        if not self.client:
+            return False
+        try:
+            # pymodbus 3.x tiene is_socket_open()
+            if hasattr(self.client, "is_socket_open"):
+                return self.client.is_socket_open()
+            # fallback: algunas versiones usan 'connected'
+            return getattr(self.client, "connected", False)
+        except Exception:
+            return False
+
     def read_holding_registers(self, address: int, count: int = 1) -> list[bool] | None:
-        # self.app._log(f"Leyendo el esclavo: {self.app.slave_id_var.get()}")
         """Reads `count` read_holding_registers starting at `address`."""
         if not self.client:
             self.log("⚠️ Client not connected. Call connect() first.")
@@ -168,7 +188,6 @@ class ModbusSerial:
         with self._lock:
             try:
                 rr = self.client.read_holding_registers(address, count=count, device_id=self.slave_id)
-                print("rr", rr)
                 if rr and not rr.isError():
                     regs   = list(rr.registers)
                     status = getattr(rr, 'status', None)
@@ -178,7 +197,7 @@ class ModbusSerial:
                 self.log(f"❌ Exception reading read_holding_registers: {e}")
         return None
 
-    def write_register(self, address: int, value: int, slave:int) -> bool:
+    def write_register(self, address: int, value: int) -> bool:
         """
         Writes a single holding register at `address`.
 
@@ -191,9 +210,7 @@ class ModbusSerial:
             return False
 
         try:
-            print("before write", slave)
-            rr = self.client.write_register(address, value, device_id=slave)
-            print("RR", rr)
+            rr = self.client.write_register(address, value, device_id=self.slave_id)
             if rr and not rr.isError():
                 self.log(f"▶ Escribio en registro {address} = {value}")
                 return True
@@ -205,14 +222,20 @@ class ModbusSerial:
         return False
 
     def restart(self):
-        print("restart")
+        self.write_register(900, 1)
+        self.write_register(900, 0)
+        self.write_register(897, 2)
 
-    def turn_on(self):
-        print("turn on")
+    def turn_on(self) -> bool:
+        self.set_remote()
+        return self.write_register(897, 3)
 
-    def turn_off(self):
-        print("turn off")
-
+    def turn_off(self) -> bool:
+        self.set_remote()           
+        is_turned_off = self.write_register(897, 0)
+        self.set_local()
+        return is_turned_off
+        
     def reset(self) -> bool:
         """
         Reconnects by closing and reopening the serial port using stored parameters.
@@ -237,7 +260,21 @@ class ModbusSerial:
                 s[name] = v * MODBUS_SCALES[name]
             else:
                 s[name] = v
+            if(name == "stat"):
+                s[name] = STATUS_TYPES_DIR[v]
         return s
+
+    def set_local(self) -> bool:
+        is_local = self.write_register(address=4357, value=2)
+        if(is_local):
+            self.log("no se pudo poner en local") 
+        return is_local
+
+    def set_remote(self) -> bool:
+        is_remote = self.write_register(address=4357, value=3)
+        if(is_remote):
+            self.log("no se pudo poner en remoto") 
+        return is_remote
     
     def start_reading(self)-> None:
         self.set_local()
@@ -249,12 +286,11 @@ class ModbusSerial:
 
             
     def on_modbus_serial_read_callback(self, regs):
-        self.log("on_modbus_serial_read_callback")
         signal = self._build_signal_from_regs(regs, SIGNAL_MODBUS_SERIAL_DIR)
-        for k, label in MODBUS_LABELS.items():
-            v = signal.get(k, None)
-            if v is not None:
-                self.log(f"ℹ️ {label}: {v}")
+        # for k, label in MODBUS_LABELS.items():
+        #     v = signal.get(k, None)
+        #     if v is not None:
+        #         self.log(f"ℹ️ {label}: {v}")
         # Publicación opcional por MQTT
         self.send_signal(signal, "drive")
     
