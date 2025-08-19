@@ -162,8 +162,6 @@ class ModbusSerial:
     def read_holding_registers(self, address: int, count: int = 1) -> list[bool] | None:
         # self.app._log(f"Leyendo el esclavo: {self.app.slave_id_var.get()}")
         """Reads `count` read_holding_registers starting at `address`."""
-        print("connected", self.client.connected)
-        print(address, self.slave_id, count)
         if not self.client:
             self.log("⚠️ Client not connected. Call connect() first.")
             return None
@@ -206,23 +204,14 @@ class ModbusSerial:
 
         return False
 
-    def start(
-        self,
-        port: str,
-        baudrate: int = 9600,
-        slave_id: int = 1,
-        timeout: float = 3.0
-    ) -> bool:
-        """
-        Alias for connect(), allowing start with parameters.
-        """
-        return self.connect(port, baudrate, slave_id, timeout)
+    def restart(self):
+        print("restart")
 
-    def stop(self) -> None:
-        """
-        Alias for disconnect().
-        """
-        self.disconnect()
+    def turn_on(self):
+        print("turn on")
+
+    def turn_off(self):
+        print("turn off")
 
     def reset(self) -> bool:
         """
@@ -233,21 +222,6 @@ class ModbusSerial:
         time.sleep(0.5)
         # Reuse last parameters
         return self.connect(self.port, self.baudrate, self._slave_id)
-
-    def custom(self, fn, *args, **kwargs):
-        """
-        Allows executing a custom Modbus function on the client.
-        `fn` should be a callable that accepts the ModbusSerialClient as first argument.
-        """
-        if not self.client:
-            self.log("⚠️ Client not connected. Call connect() first.")
-            return None
-        with self._lock:
-            try:
-                return fn(self.client, *args, **kwargs)
-            except Exception as e:
-                self.log(f"❌ Exception in custom function: {e}")
-                return None
             
     def _build_signal_from_regs(self, regs: dict[int, int], modbus_dir) -> dict:
         """
@@ -264,6 +238,14 @@ class ModbusSerial:
             else:
                 s[name] = v
         return s
+    
+    def start_reading(self)-> None:
+        self.set_local()
+        addrs = list(dict.fromkeys(SIGNAL_MODBUS_SERIAL_DIR.values()))
+        self.serial_poll = self.poll_registers(
+            addresses=addrs, interval=self.poll_interval
+        )
+
 
             
     def on_modbus_serial_read_callback(self, regs):

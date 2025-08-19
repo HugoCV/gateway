@@ -142,7 +142,7 @@ def build_device_tab(app, parent):
         ("Iniciar",  app.controller.on_start_modbus_tcp),
         ("Apagar",   app.controller.on_stop_modbus_tcp),
         ("Reiniciar",app.controller.on_reset_modbus_tcp),
-        ("Leer Multiple", app.controller.on_multiple_modbus_tcp),
+        ("Leer Multiple", app.controller.on_start_modbus_tcp),
         ("Local", app.controller.on_set_remote_tcp),
     ]
     for idx, (text, cmd) in enumerate(tcp_buttons):

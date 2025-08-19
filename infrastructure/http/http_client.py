@@ -33,7 +33,6 @@ class HttpClient:
             await self._session.close()
 
     # === public api ===
-
     def connect(self, base_url: str, interval: int = 1):
         self.base_url = base_url.rstrip('/')
         self.interval = interval

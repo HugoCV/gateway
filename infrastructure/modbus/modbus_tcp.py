@@ -26,6 +26,22 @@ MODBUS_SCALES = {
     "freq": 0.01,     # /100
 }
 
+SIGNAL_MODBUS_TCP_DIR = {
+    "freqRef": 5,
+    "accTime": 7,
+    "decTime": 8,
+    "curr": 9,
+    "freq": 10,
+    "volt": 11,
+    "voltDcLink": 12,
+    "power": 13,       # si no se puede saber, devuelves None si no existe
+    "fault": 15,
+    "stat": 17,        # 0=stop 1=falla 2=operacion
+    "dir": 19,         # ajusta si cambia
+    "speed": 786,
+    "alarm": 816,
+    "temp": 861,
+}
 
 class ModbusTcp:
     def __init__(self, controller, send_signal, log):
@@ -71,21 +87,21 @@ class ModbusTcp:
             self.client = None
             return False
 
-    def start(self):
+    def turn_on(self):
         if self.client:
             result = self.client.write_register(address=898, value=3)
             self.log(f"resultado {result}")
             if not result.isError():
                 self.log("✔ Comando enviado: RUN")
 
-    def stop(self):
+    def turn_off(self):
         if self.client:
             result = self.client.write_register(address=898, value=0)
             self.log(f"resultado {result}")
             if not result.isError():
                 self.log("✔ Comando enviado: STOP")
     
-    def reset(self):
+    def restart(self):
         if self.client:
             result1 = self.client.write_register(address=901, value=1)
             result2 = self.client.write_register(address=901, value=0)
@@ -118,16 +134,12 @@ class ModbusTcp:
                 time.sleep(5)
         threading.Thread(target=read_loop, daemon=True).start()
 
-    # def send_signal(self, signal_info):
-    #     device_serial = self.controller.serial_var.get().strip()
-    #     gw_id = self.controller.gateway_cfg.get("gatewayId")
-    #     or_id = self.controller.gateway_cfg.get("organizationId")
-    #     topic_info = {
-    #         "gateway_id": gw_id,
-    #         "organization_id": or_id,
-    #         "serial_number": device_serial
-    #     }
-    #     self.controller.gateway.send_signal(topic_info, signal_info)
+    def start_reading(self)-> None:
+        self.set_local()
+        addrs = list(dict.fromkeys(SIGNAL_MODBUS_TCP_DIR.values()))
+        self.tcp_poll = self.poll_registers(
+            addresses=addrs, interval=self.poll_interval
+        )
 
     def poll_registers(
         self,
@@ -175,7 +187,7 @@ class ModbusTcp:
         return s
     
     def _read_callback(self, regs):
-        signal = self._build_signal_from_regs(regs, self.signal_modbus_tcp_dir)
+        signal = self._build_signal_from_regs(regs, SIGNAL_MODBUS_TCP_DIR)
         for k, label in MODBUS_LABELS.items():
             v = signal.get(k, None)
             if v is not None:

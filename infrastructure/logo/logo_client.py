@@ -13,6 +13,15 @@ LOGO_LABELS = {
     "highPressureRes": "High-pressure reset delay",
 }
 
+SIGNAL_LOGO_DIR = {
+    "faultRec": 2,
+    "faultRes": 4,
+    "workHours": 5,
+    "workMinutes": 6,
+    "faultLowWater": 8,
+    "highPressureRes": 11,
+}
+
 class LogoModbusClient:
     def __init__(self, app, log, send_signal):
         self.log = log
@@ -129,7 +138,7 @@ class LogoModbusClient:
         return thread
     
     def _build_signal_from_regs(self, regs: dict[int, int]) -> dict:
-        return {name: regs.get(addr) for name, addr in self.signal_logo_dir.items()}
+        return {name: regs.get(addr) for name, addr in SIGNAL_LOGO_DIR.items()}
 
     def _read_callback(self, regs):
         signal = self._build_logo_signal_from_regs(regs)
@@ -156,4 +165,14 @@ class LogoModbusClient:
                 self.client.close()
             except Exception:
                 pass
+    def turn_on(self):
+        print("turn on")
+    
+    def turn_off(self):
+        print("turn off")
+
+    def start_reading(self) -> None:
+        if(self.client):
+            addrs = list(dict.fromkeys(SIGNAL_LOGO_DIR.values()))
+            self.poll_registers(addrs)
 

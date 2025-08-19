@@ -175,39 +175,6 @@ class AppController:
     def on_send_signal(self, results, group):
         self.mqtt_handler.on_send_signal(results, group)
 
-    # def on_send_signal(self, results, group):
-    #     """
-    #     results: dict con lecturas
-    #     group:   'drive' | 'logo' | etc.
-    #     """
-    #     try:
-    #         if not isinstance(results, dict) or not results:
-    #             self.window._log("⚠️ Resultado vacío o no es dict; no se envía MQTT.")
-    #             return
-
-    #         serial = (self.window.serial_var.get() or "").strip()
-    #         if not serial:
-    #             self.window._log("⚠️ Serial vacío; se omite envío MQTT.")
-    #             return
-
-    #         # Acepta organization_id/organizationId y gateway_id/gatewayId
-    #         org_id = self.gateway_cfg.get("organization_id") or self.gateway_cfg.get("organizationId")
-    #         gw_id  = self.gateway_cfg.get("gateway_id") or self.gateway_cfg.get("gatewayId")
-    #         if not org_id or not gw_id:
-    #             self.window._log(f"⚠️ Faltan IDs en gateway_cfg: org={org_id} gw={gw_id}")
-    #             return
-
-    #         topic_info = {
-    #             "serial_number":  serial,
-    #             "organization_id": org_id,
-    #             "gateway_id":      gw_id,
-    #         }
-    #         signal = {"group": group, "payload": results}
-    #         self.mqtt_handler.send_signal(topic_info, signal)
-    #     except Exception as e:
-    #         # mensaje correcto para esta función
-    #         self.window._log(f"❌ on_send_signal error: {e}")
-
     # === Devices ===
     def get_device_by_name(self, name):
         return next((d for d in self.device_manager.devices if d.get("name") == name), None)
@@ -217,7 +184,6 @@ class AppController:
             devices = {}
 
         self.devices = self.create_all_devices(devices)
-        
         self.services = list(self.devices.values())
         names = [svc.device["name"] for svc in self.services]
         self.window.device_combo["values"] = names
@@ -236,11 +202,6 @@ class AppController:
                 gateway_cfg=self.gateway_cfg,
                 device=dev,
                 log=self.window._log,
-                signal_modbus_tcp_dir=SIGNAL_MODBUS_TCP_DIR,
-                signal_logo_dir=SIGNAL_LOGO_DIR,
-                modbus_scales=MODBUS_SCALES,
-                modbus_labels=MODBUS_LABELS,
-                logo_labels=LOGO_LABELS,
                 update_fields=self.update_device_fields
             )
             device_services[ds.serial] = ds
@@ -327,25 +288,6 @@ class AppController:
         svc.read_http_fault()
 
 
-    # === Utilidad: construir señal con escalas conocidas ===
-    def _build_signal_from_regs(self, regs: dict[int, int], modbus_dir) -> dict:
-        """
-        Crea dict de señal a partir de registros, aplicando escalas definidas en MODBUS_SCALES.
-        """
-        print("no se debe usar esta funcion")
-        return
-        # s = {}
-        # for name, addr in modbus_dir.items():
-        #     v = regs.get(addr)
-        #     if v is None:
-        #         s[name] = None
-        #         continue
-        #     if name in MODBUS_SCALES:
-        #         s[name] = v * MODBUS_SCALES[name]
-        #     else:
-        #         s[name] = v
-        # return s
-
     # === Modbus Serial ===
     def on_connect_modbus_serial_old(self):
         self.window._log("tratando de conectar a travez de modbus serial")
@@ -381,46 +323,23 @@ class AppController:
         self.modbus_serial_handler.write_register(897, self.window.slave_id_var.get(), 2)
 
     def on_multiple_modbus_serial(self):
-        #self.window._log("on_multiple_modbus_serial")
-        #addresses = list(dict.fromkeys(self.signal_modbus_serial_dir.values()))
-        #self.window._log(f"[Serial] Polling: {addresses}")
-        #self.modbus_serial_thread = self.modbus_serial_handler.poll_registers(
-        #    addresses=addresses,
-        #    interval=0.5,
-        #)
         if not (svc := self.devices.get(self.selected_serial)):
             self.window._log("⚠️ No device selected.")
             return
         svc.multiple_modbus_serial_read()
 
-    def on_modbus_serial_read_callback(self, regs):
-        signal = self._build_signal_from_regs(regs, self.signal_modbus_serial_dir)
-        for k, label in MODBUS_LABELS.items():
-            v = signal.get(k, None)
-            if v is not None:
-                self.window._log(f"ℹ️ {label}: {v}")
-        # Publicación opcional por MQTT
-        self.on_send_signal(signal, "drive")
-
     # === Modbus TCP ===
-    def on_connect_modbus_tcp(self):
-        """Inicia cliente Modbus TCP y lo deja en modo local."""
-        ip = (self.window.tcp_ip_var.get() or "").strip()
-        port = self.window.tcp_port_var.get()
-        if not ip or not port:
-            self.window._log("⚠️ IP o puerto no definidos.")
-            return
-
-        self.modbus_tcp_handler.connect(ip, port)
-        self.modbus_tcp_handler.set_local()
-
     def on_connect_modbus_tcp(self):
         if not (svc := self.devices.get(self.selected_serial)):
             self.window._log("⚠️ No device selected.")
             return
-        svc.start_modbus_tcp()
+        svc.connect_modbus_tcp()
+
     def on_start_modbus_tcp(self):
-        self.modbus_tcp_handler.start()
+        if not (svc := self.devices.get(self.selected_serial)):
+            self.window._log("⚠️ No device selected.")
+            return
+        svc.connect_modbus_tcp()
 
     def on_stop_modbus_tcp(self):
         self.modbus_tcp_handler.stop()
@@ -431,39 +350,16 @@ class AppController:
     def on_custom_modbus_tcp(self):
         self.modbus_tcp_handler.set_local()
 
-    def on_multiple_modbus_tcp(self):
-        addresses = list(dict.fromkeys(self.signal_modbus_tcp_dir.values()))
-        self.window._log(f"[TCP] Polling: {addresses}")
-        # reusar el mismo atributo si así lo tenías
-        self.modbus_serial_thread = self.modbus_tcp_handler.poll_registers(
-            addresses=addresses,
-            interval=0.5,
-        )
+    def on_start_modbus_tcp(self):
+        if not (svc := self.devices.get(self.selected_serial)):
+            self.window._log("⚠️ No device selected.")
+            return
+        svc.connect_http()
 
     def on_set_remote_tcp(self):
         self.modbus_tcp_handler.write_register(address=4358, value=2)
 
-    def on_modbus_tcp_read_callback(self, regs):
-        signal = self._build_signal_from_regs(regs, self.signal_modbus_tcp_dir)
-        for k, label in MODBUS_LABELS.items():
-            v = signal.get(k, None)
-            if v is not None:
-                self.window._log(f"ℹ️ {label}: {v}")
-        self.on_send_signal(signal, "drive")
-
     # === Logo ===
-    def _build_logo_signal_from_regs(self, regs: dict[int, int]) -> dict:
-        return {name: regs.get(addr) for name, addr in self.signal_logo_dir.items()}
-
-    def on_logo_read_callback(self, regs):
-        signal = self._build_logo_signal_from_regs(regs)
-        for k, label in LOGO_LABELS.items():
-            v = signal.get(k, None)
-            if v is not None:
-                self.window._log(f"ℹ️ {label}: {v}")
-        # Publicación opcional por MQTT (grupo 'logo')
-        self.on_send_signal(signal, "logo")
-
     def on_multiple_logo(self):
         addresses = list(dict.fromkeys(self.signal_logo_dir.values()))
         self.window._log(f"[LOGO] Polling: {addresses}")
