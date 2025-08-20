@@ -54,10 +54,10 @@ STATUS_REG = {
 
 DEVICE = {
     "status": {
-        "address": 987,
+        "address": 897,
         "values": {
-            "on": 0,
-            "off": 3
+            "on": 3,
+            "off": 0
         }
     },
     "mode": {
@@ -80,7 +80,9 @@ DIR_TYPE_DIR = {
     4: "reverse",
     1: "stop",
     129: "auto",
-    130: "fwd"
+    130: "fwd",
+    193: "acc",
+    194: "acc"
 }
 
 class ModbusSerial:
@@ -245,7 +247,7 @@ class ModbusSerial:
         try:
             rr = self.client.write_register(address, value, device_id=self.slave_id)
             if rr and not rr.isError():
-                self.log(f"▶ Escribio en registro {address} = {value}")
+                print(f"▶ Escribio en registro {address} = {value}")
                 return True
             else:
                 self.log(f"❌ Error writing register {address}: {rr}")

@@ -42,7 +42,7 @@ class DeviceService:
         self._ALLOWED_CC_KEYS = {
             "host", "httpPort", "tcpPort",
             "serialPort", "baudrate", "slaveId",
-            "logoIp", "logoPort"
+            "logoIp", "logoPort", "mode"
         }
 
         # Device identity
@@ -68,8 +68,9 @@ class DeviceService:
         self.modbus_serial = ModbusSerial(self, self._send_signal, self.log)
         self.modbus_tcp = ModbusTcp(self, self._send_signal, self.log)
         self.logo = LogoModbusClient(self, self.log, self._send_signal)
-
         self.alive: bool = False
+
+        self.start_default_connections()
 
     # ---------------------------
     # Lifecycle
@@ -90,6 +91,21 @@ class DeviceService:
 
         if not any([self.http, self.modbus_tcp, self.modbus_serial, self.logo]):
             self.log(f"⚠️ {self.device_id} has no configured endpoints (HTTP/TCP/Serial/LOGO).")
+
+    def start_default_connections(self):
+        match self.cc.get("defaultReader"):
+            case "serial":
+                self.disconnect_modbus_serial()
+                self.connect_modbus_serial()
+                self.start_reading_modbus_serial()
+            case "http":
+                self.disconnect_http()
+                self.connect_http()
+                self.start_reading_http()
+            case "tcp":
+                self.disconnect_modbus_tcp()
+                self.connect_modbus_tcp()
+                self.start_reading_modbus_tcp()
 
     def stop(self) -> None:
         """Best-effort to stop device connections."""
@@ -184,7 +200,6 @@ class DeviceService:
 
     # Serial
     def connect_modbus_serial(self) -> None:
-        print("connect_modbus_serial", self.modbus_serial)
         if self.cc.get("serialPort") and self.cc.get("baudrate") and self.cc.get("slaveId") is not None:
             try:
                 self.modbus_serial.connect(
@@ -250,7 +265,7 @@ class DeviceService:
             if not filtered:
                 self.log("update_connection_config: no applicable changes.")
                 return
-
+            
             prev = dict(self.cc)
 
             # Merge (partial): new/updated keys; None values remove key
@@ -261,21 +276,23 @@ class DeviceService:
                     self.cc[k] = v
 
             # changed_http = any(prev.get(k) != self.cc.get(k) for k in ("host", "httpPort"))
-            # changed_tcp  = any(prev.get(k) != self.cc.get(k) for k in ("host", "tcpPort"))
-            # changed_ser  = any(prev.get(k) != self.cc.get(k) for k in ("serialPort", "baudrate", "slaveId"))
+            changed_tcp  = any(prev.get(k) != self.cc.get(k) for k in ("host", "tcpPort"))
+            changed_ser  = any(prev.get(k) != self.cc.get(k) for k in ("serialPort", "baudrate", "slaveId"))
             # changed_logo = any(prev.get(k) != self.cc.get(k) for k in ("logoIp", "logoPort"))
 
             # if changed_http:
             #     self.log(f"Restarting HTTP ({self.device_id}) due to config change.")
             #     self._stop_http(); self._start_http()
 
-            # if changed_tcp:
-            #     self.log(f"Restarting Modbus TCP ({self.device_id}) due to config change.")
-            #     self._stop_modbus_tcp(); self._start_modbus_tcp()
+            if changed_tcp:
+                self.log(f"Restarting Modbus TCP ({self.device_id}) due to config change.")
+                self.disconnect_modbus_tcp(); self.connect_modbus_tcp()
 
-            # if changed_ser:
-            #     self.log(f"Restarting Modbus Serial ({self.device_id}) due to config change.")
-            #     self._stop_modbus_serial(); self.start_modbus_serial()
+            if changed_ser:
+                self.log(f"Restarting Modbus Serial ({self.device_id}) due to config change.")
+                self.disconnect_modbus_serial(); self.connect_modbus_serial()
+
+            print("filtered", self.cc["mode"])
 
             # if changed_logo:
             #     self.log(f"Restarting LOGO! ({self.device_id}) due to config change.")
@@ -309,7 +326,6 @@ class DeviceService:
                 "organization_id": org_id,
                 "gateway_id":      gw_id,
             }
-            print("results", results)
             payload = {"group": group, "payload": results}
             self.mqtt.send_signal(topic_info, payload)
         except Exception as e:

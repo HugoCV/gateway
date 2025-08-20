@@ -122,21 +122,19 @@ class AppController:
     def on_receive_command(self, device_serial, command):
         if not self.devices:
             self.window._log(f"no hay dispositivos conectados commando recivido {command}")
+        if not (ds := self.devices.get(device_serial)):
+                    self.window._log("⚠️ No device selected.")
+                    return    
         match command["action"]:
             case "update-status":
-                # self.device_services[device_serial]
-                if not (svc := self.devices.get(device_serial)):
-                    self.window._log("⚠️ No device selected.")
-                    return
                 if(command["params"]["value"] == "on"):
                     self.log(f"El dispositivo {svc.name} se mando a encender")
-                    svc.turn_on()
+                    ds.turn_on()
                 else:
                     self.log(f"El dispositivo {svc.name} se mando a apagar")
-                    svc.turn_off()
-
+                    ds.turn_off()
             case "update-connections":
-                self.devices[device_serial].update_connection_config(command["params"])
+                ds.update_connection_config(command["params"])
             case "update-config":
                 print("update-config", command["params"]["value"], "device_serial", device_serial)
         
@@ -188,6 +186,7 @@ class AppController:
                 log=self.window._log,
                 update_fields=self.update_device_fields
             )
+
             device_services[ds.serial] = ds
         return device_services
 

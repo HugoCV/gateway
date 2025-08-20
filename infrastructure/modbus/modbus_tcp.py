@@ -53,7 +53,10 @@ DIR_TYPE_DIR = {
     1: "stop",
     4: "reverse",
     65: "auto",
-    66: "fwd"
+    66: "fwd",
+    129: "auto",
+    258: "fwd",
+    257: "acc"
 }
 
 DEVICE = {
@@ -192,7 +195,6 @@ class ModbusTcp:
             while True:
                 if self.client:
                     rr = self.client.read_holding_registers(address=19, count=9)
-                    print(rr)
                 time.sleep(5)
         threading.Thread(target=read_loop, daemon=True).start()
 
@@ -236,16 +238,15 @@ class ModbusTcp:
         Crea dict de señal a partir de registros, aplicando escalas definidas en MODBUS_SCALES.
         """
         s = {}
-        print(modbus_dir.items())
         for name, addr in modbus_dir.items():
             v = regs.get(addr)
             if v is None:
                 s[name] = None
                 continue
-            # if name in MODBUS_SCALES:
-            #     s[name] = v * MODBUS_SCALES[name]
-            # else:
-            #     s[name] = v
+            if name in MODBUS_SCALES:
+                s[name] = v * MODBUS_SCALES[name]
+            else:
+                s[name] = v
             if(name == "stat"):
                 s[name] = STATUS_TYPES_DIR[v]
             if(name == "dir"):

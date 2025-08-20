@@ -160,7 +160,6 @@ class LogoModbusClient:
             if v is not None:
                 self.window._log(f"ℹ️ {label}: {v}")
         # Publicación opcional por MQTT (grupo 'logo')
-        print("on_send_signal", signal, "logo")
         self.send_signal(signal, "logo")
 
     def is_connected(self) -> bool:
