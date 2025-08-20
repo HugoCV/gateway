@@ -37,7 +37,7 @@ SIGNAL_MODBUS_TCP_DIR = {
     "power": 13,       # si no se puede saber, devuelves None si no existe
     "fault": 15,
     "stat": 17,        # 0=stop 1=falla 2=operacion
-    "dir": 19,         # ajusta si cambia
+    "dir": 6,         # ajusta si cambia
     "speed": 786,
     "alarm": 816,
     "temp": 861,
@@ -47,6 +47,13 @@ STATUS_TYPES_DIR = {
     0 : "stop",
     1 : "fault",
     2 : "run"
+}
+
+DIR_TYPE_DIR = {
+    1: "stop",
+    4: "reverse",
+    65: "auto",
+    66: "fwd"
 }
 
 class ModbusTcp:
@@ -212,17 +219,21 @@ class ModbusTcp:
         Crea dict de señal a partir de registros, aplicando escalas definidas en MODBUS_SCALES.
         """
         s = {}
+        print(modbus_dir.items())
         for name, addr in modbus_dir.items():
             v = regs.get(addr)
             if v is None:
                 s[name] = None
                 continue
-            if name in MODBUS_SCALES:
-                s[name] = v * MODBUS_SCALES[name]
-            else:
-                s[name] = v
+            # if name in MODBUS_SCALES:
+            #     s[name] = v * MODBUS_SCALES[name]
+            # else:
+            #     s[name] = v
             if(name == "stat"):
                 s[name] = STATUS_TYPES_DIR[v]
+            if(name == "dir"):
+                s[name] = DIR_TYPE_DIR[v]
+            
         return s
     
     def _read_callback(self, regs):
