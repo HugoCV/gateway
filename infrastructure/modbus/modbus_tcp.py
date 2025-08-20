@@ -56,6 +56,23 @@ DIR_TYPE_DIR = {
     66: "fwd"
 }
 
+DEVICE = {
+    "status": {
+        "address": 987,
+        "values": {
+            "on": 0,
+            "off": 3
+        }
+    },
+    "mode": {
+        "address": 4358,
+        "values": {
+            "local": 2,
+            "remote": 4
+        }
+    }
+}
+
 class ModbusTcp:
     def __init__(self, controller, send_signal, log):
         self.send_signal = send_signal
@@ -135,13 +152,13 @@ class ModbusTcp:
                 self.log("✔ Comando enviado: RESET")
 
     def set_local(self) -> bool:
-        is_local = self.write_register(address=4358, value=2)
+        is_local = self.write_register(address=DEVICE["mode"]["address"], value=DEVICE["mode"]["values"]["local"])
         if(is_local):
             self.log("no se pudo poner en remoto") 
         return is_local
 
     def set_remote(self) -> bool:
-        is_remote = self.write_register(address=4358, value=4)
+        is_remote = self.write_register(address=DEVICE["mode"]["address"], value=DEVICE["mode"]["values"]["remote"])
         if(is_remote):
             self.log("no se pudo poner en remoto") 
         return is_remote

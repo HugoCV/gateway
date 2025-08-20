@@ -44,6 +44,32 @@ SIGNAL_MODBUS_SERIAL_DIR = {
     "temp": 860,
 }
 
+STATUS_REG = {
+    "address": 987,
+    "values": {
+        "on": 0,
+        "off": 3
+    }
+}
+
+DEVICE = {
+    "status": {
+        "address": 987,
+        "values": {
+            "on": 0,
+            "off": 3
+        }
+    },
+    "mode": {
+        "address": 4357,
+        "values": {
+            "local": 2,
+            "remote": 3
+        }
+    }
+}
+
+
 STATUS_TYPES_DIR = {
     0 : "stop",
     1 : "fault",
@@ -231,15 +257,15 @@ class ModbusSerial:
     def restart(self):
         self.write_register(900, 1)
         self.write_register(900, 0)
-        self.write_register(897, 2)
+        self.turn_on()
 
     def turn_on(self) -> bool:
         self.set_remote()
-        return self.write_register(897, 3)
+        return self.write_register(DEVICE["status"]["address"], DEVICE["status"]["values"]["on"])
 
     def turn_off(self) -> bool:
         self.set_remote()           
-        is_turned_off = self.write_register(897, 0)
+        is_turned_off = self.write_register(DEVICE["status"]["address"], DEVICE["status"]["values"]["off"])
         self.set_local()
         return is_turned_off
         
@@ -274,13 +300,13 @@ class ModbusSerial:
         return s
 
     def set_local(self) -> bool:
-        is_local = self.write_register(address=4357, value=2)
+        is_local = self.write_register(address=DEVICE["mode"]["address"], value=DEVICE["mode"]["values"]["local"])
         if(is_local):
             self.log("no se pudo poner en local") 
         return is_local
 
     def set_remote(self) -> bool:
-        is_remote = self.write_register(address=4357, value=3)
+        is_remote = self.write_register(address=DEVICE["mode"]["address"], value=DEVICE["mode"]["values"]["remote"])
         if(is_remote):
             self.log("no se pudo poner en remoto") 
         return is_remote
