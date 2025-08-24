@@ -14,12 +14,14 @@ LOGO_LABELS = {
 }
 
 SIGNAL_LOGO_DIR = {
-    "faultRec": 2,
-    "faultRes": 4,
+    "status": 0,
+    "restartTime": 1,
+    "voltageResetTime": 2,
+    "autoResetTime": 4,
     "workHours": 5,
     "workMinutes": 6,
-    "faultLowWater": 8,
-    "highPressureRes": 11,
+    "lowLevelResetTime": 8,
+    "highPressureCount": 11,
 }
 
 class LogoModbusClient:
@@ -94,31 +96,82 @@ class LogoModbusClient:
             return getattr(self.client, "connected", False)
         except Exception:
             return False
+
+    def read_coils(self, start_address: int, count: int) -> list[bool] | None:
+        """
+        Lee múltiples coils (entradas/salidas digitales) contiguos con manejo de reconexión robusto.
+        Devuelve una lista de booleanos o None si falla.
+        """
+        try:
+            # Verificar conexión antes de leer
+            if not self.client or not self.client.connected:
+                self.log("Cliente Modbus desconectado, intentando reconectar...")
+                if not self.client.connect():
+                    self.log("❌ No se pudo reconectar al servidor Modbus.")
+                    return None
+
+            rr = self.client.read_coils(address=start_address, count=count, device_id=0)
+
+            if rr and not rr.isError():
+                return rr.bits  # 👈 devuelve lista de True/False
+
+            self.log(f"⚠️ read_coils error: {rr}")
+            return None
+
+        except OSError as e:
+            self.log(f"⚡ Error de conexión: {e}")
+            try:
+                self.client.close()
+                if self.client.connect():
+                    self.log("🔄 Reconexión exitosa, reintentando lectura...")
+                    rr = self.client.read_coils(address=start_address, count=count, device_id=0)
+                    if rr and not rr.isError():
+                        return rr.bits
+            except Exception as inner_e:
+                self.log(f"Reconexión fallida: {inner_e}")
+            return None
+
+        except Exception as e:
+            self.log(f"❌ Excepción leyendo coils: {e}")
+            return None
     
     def read_registers(self, start_address: int, count: int) -> list[int] | None:
         """
-        Lee múltiples holding registers contiguos.
+        Lee múltiples holding registers contiguos con manejo de reconexión robusto.
         """
         try:
-            rr = self.client.read_holding_registers(address=start_address, count=count)  # <- keywords
+            # Verificar conexión antes de leer
+            if not self.client or not self.client.connected:
+                self.log("Cliente Modbus desconectado, intentando reconectar...")
+                if not self.client.connect():
+                    self.log("No se pudo reconectar al servidor Modbus.")
+                    return None
+
+            rr = self.client.read_holding_registers(address=start_address, count=count)
+
             if rr and not rr.isError():
                 return rr.registers
-            self.log(f"⚠️ read_holding_registers error: {rr}")
+
+            self.log(f"read_holding_registers error: {rr}")
             return None
-        except (ConnectionResetError, OSError) as e:
-            self.log(f"❌ Error de conexión al leer registros: {e}")
+
+        except OSError as e:
+            self.log(f"Error de conexión: {e}")
+            # Forzar cierre + reconexión
+            try:
+                self.client.close()
+                if self.client.connect():
+                    self.log("🔄 Reconexión exitosa, reintentando lectura...")
+                    rr = self.client.read_holding_registers(address=start_address, count=count)
+                    if rr and not rr.isError():
+                        return rr.registers
+            except Exception as inner_e:
+                self.log(f"Reconexión fallida: {inner_e}")
             return None
+
         except Exception as e:
-            self.log(f"❌ Exception reading registers: {e}")
+            self.log(f"Exception reading registers: {e}")
             return None
-    
-    def write_coil(self, address: int, value: bool) -> bool:
-        """Escribe un coil y devuelve True si no hubo error."""
-        try:
-            rr = self.client.write_coil(address, bool(value))
-            return (rr is not None) and (not rr.isError())
-        except Exception:
-            return False
 
     def poll_registers(
         self,
@@ -140,35 +193,69 @@ class LogoModbusClient:
                         regs = self.read_registers(addr, 1)
                         if regs is not None:
                             regs_group[addr] = regs[0]
-                        # else: se omite si error
                     except Exception as e:
                         self.log(f"❌ Exception polling register {addr}: {e}")
                 time.sleep(interval)
-                # Llamada al callback del controlador si existe
                 self._read_callback(regs_group)
         thread = threading.Thread(target=_poll, daemon=True)
         thread.start()
         return thread
     
     def _build_signal_from_regs(self, regs: dict[int, int]) -> dict:
-        return {name: regs.get(addr) for name, addr in SIGNAL_LOGO_DIR.items()}
+        signal = {}
+
+        for name, addr in SIGNAL_LOGO_DIR.items():
+            value = regs.get(addr)
+            if value is None:
+                continue
+
+            if name == "status":
+                # Mapeo de códigos de estado/falla
+                status_map = {
+                    163: "Operando",
+                    97: "Alta presión (conteo)",
+                    32: "Falla: bajo nivel",
+                    35: "Apagado por selector",
+                    33: "Selector Fuera",
+                    608: "Falla bajo nivel",
+                    577: "Falla de voltaje",
+                    4707: "Desaceleracion",
+                    545: "Reposo",
+                    547: "Desaceleracion",
+                    609: "Paro por alta precion",
+                    673: "Encendido por selector",
+                    737: "Aceleracion",
+                    611: "Desaceleracion",
+                    1569: "Falla de confirma",
+                    4705: "En Transito",
+                    739: "Operacion",
+                    1633: "Falla de confirma",
+                    34: "Falla: bajo nivel",
+                    1: "Falla de voltaje",
+                    3: "Falla de voltaje",
+                    41: "Falla térmica/variador",
+                    675: "Operacion",
+                    161: "Arranque fallido (LOGO envía señal, contactor/variador no encienden)",
+                }
+                signal[name] = status_map.get(value, f"Desconocido ({value})")
+            else:
+                # Para los tiempos, dejamos el valor numérico tal cual
+                signal[name] = value
+
+        return signal
 
     def _read_callback(self, regs):
-        signal = self._build_logo_signal_from_regs(regs)
-        for k, label in LOGO_LABELS.items():
-            v = signal.get(k, None)
-            if v is not None:
-                self.window._log(f"ℹ️ {label}: {v}")
-        # Publicación opcional por MQTT (grupo 'logo')
-        self.send_signal(signal, "logo")
+        signal = self._build_signal_from_regs(regs)
 
-    def is_connected(self) -> bool:
-        """Comprueba si la conexión TCP está abierta."""
-        try:
-            sock = self.client.socket
-            return sock is not None and not sock._closed
-        except Exception:
-            return False
+        if not signal:
+            return  
+
+        # Filter None
+        payload = {k: v for k, v in signal.items() if v is not None}
+        if not payload:
+            return 
+
+        self.send_signal(payload, "logo")
 
     def close(self):
         """Cierra la conexión TCP al dispositivo."""
@@ -178,13 +265,30 @@ class LogoModbusClient:
             except Exception:
                 pass
     def turn_on(self):
+        if(self.is_connected()):
+            return self.write_coil(3, 1)
         print("turn on")
+
+    def restart(self):
+        if(self.is_connected()):
+            return self.write_coil(5, 1)
+        print("restart")
     
     def turn_off(self):
-        print("turn off")
+        if(self.is_connected()):
+            return self.write_coil(4, 1)
 
     def start_reading(self) -> None:
         if(self.client):
             addrs = list(dict.fromkeys(SIGNAL_LOGO_DIR.values()))
             self.poll_registers(addrs)
+
+    def write_coil(self, address: int, value: bool) -> bool:
+        """Write coil and returns True if no error."""
+        try:
+            rr = self.client.write_coil(address, bool(value))
+            print("logo rc", rr)
+            return (rr is not None) and (not rr.isError())
+        except Exception:
+            return False
 

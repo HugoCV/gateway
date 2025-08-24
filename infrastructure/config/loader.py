@@ -24,9 +24,9 @@ def load_env():
     dotenv_path = find_dotenv()
     if dotenv_path:
         load_dotenv(dotenv_path)
-        print(f"✅ Environment loaded from {dotenv_path}")
+        print(f"Environment loaded from {dotenv_path}")
     else:
-        print("⚠️ No .env file found. Using existing environment variables.")
+        print("No .env file found. Using existing environment variables.")
 
 
 def load_config():

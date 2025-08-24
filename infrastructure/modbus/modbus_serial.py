@@ -82,7 +82,7 @@ DIR_TYPE_DIR = {
     129: "auto",
     130: "fwd",
     193: "acc",
-    194: "acc"
+    194: "fwd"
 }
 
 class ModbusSerial:
@@ -107,31 +107,29 @@ class ModbusSerial:
         """
         Opens the Modbus RTU client over a serial port.
         Returns True if connection succeeded.
-
-        Args:
-            port: Serial port name, e.g. "/dev/ttyUSB0" or "COM3".
-            baudrate: Baud rate for serial communication.
-            slave_id: Modbus slave address.
-            timeout: Read timeout in seconds.
         """
-        # Save parameters
         self.port = port
         self.baudrate = baudrate
         self.slave_id = slave_id
+
         try:
-            # Instantiate Modbus client (RTU mode)
+            # Test the following
+            # if not os.path.exists(self.port):
+            #     self.log(f"❌ Serial device {self.port} not found.")
+            #     return False
+
             self.client = ModbusSerialClient(
-                port=self.port,              # p.ej. "/dev/ttyUSB0"
-                baudrate=self.baudrate,      # p.ej. 9600
-                parity="N",                  # típico en RTU (ajústalo a tu equipo)
+                port=self.port,
+                baudrate=self.baudrate,
+                parity="N",
                 stopbits=1,
                 bytesize=8,
-                timeout=3.0,
+                timeout=timeout,
                 retries=3,
             )
+
             connected = self.client.connect()
             if connected:
-                # Configure RS-485 settings on underlying transport
                 try:
                     transport = getattr(self.client, 'socket', None)
                     if hasattr(transport, 'rs485_mode'):
@@ -143,15 +141,27 @@ class ModbusSerial:
                         )
                 except Exception as e:
                     self.log(f"⚠️ RS-485 mode not supported: {e}")
-                self.log(f"✅ Modbus RTU connected on {self.port}@{self.baudrate} (slave={self.slave_id})")
+
+                self.log(f"✅ Connected to {self.port}@{self.baudrate} (slave={self.slave_id})")
             else:
-                self.log(f"❌ Failed to connect Modbus RTU on {self.port}@{self.baudrate}")
+                self.log(f"❌ Failed to connect on {self.port}@{self.baudrate}")
             return connected
-        except ModbusException as e:
-            self.log(f"❌ Modbus exception on connect: {e}")
+
+        except OSError as e:
+            if e.errno == errno.ENOENT:
+                self.log(f"❌ Device {self.port} not found.")
+            elif e.errno == errno.EACCES:
+                self.log(f"❌ Permission denied for {self.port}. Try adding user to 'dialout' group.")
+            else:
+                self.log(f"❌ OS error on {self.port}: {e}")
             return False
+
+        except ModbusException as e:
+            self.log(f"❌ Modbus exception: {e}")
+            return False
+
         except Exception as e:
-            self.log(f"❌ Error opening RS-485 port: {e}")
+            self.log(f"❌ Unexpected error on {self.port}: {e}")
             return False
 
     def disconnect(self) -> None:
@@ -247,12 +257,12 @@ class ModbusSerial:
         try:
             rr = self.client.write_register(address, value, device_id=self.slave_id)
             if rr and not rr.isError():
-                print(f"▶ Escribio en registro {address} = {value}")
+                print(f"Serial Escribio en registro {address} = {value}")
                 return True
             else:
                 self.log(f"❌ Error writing register {address}: {rr}")
         except Exception as e:
-            self.log(f"❌ Exception writing register {address}: {e}")
+            self.log(f"Serial Exception writing register {address}: {e}")
 
         return False
 
@@ -314,7 +324,8 @@ class ModbusSerial:
         return is_remote
     
     def start_reading(self)-> None:
-        self.set_local()
+        if not self.is_connected():
+            return
         addrs = list(dict.fromkeys(SIGNAL_MODBUS_SERIAL_DIR.values()))
         self.serial_poll = self.poll_registers(
             addresses=addrs, interval=self.poll_interval
@@ -324,10 +335,15 @@ class ModbusSerial:
             
     def on_modbus_serial_read_callback(self, regs):
         signal = self._build_signal_from_regs(regs, SIGNAL_MODBUS_SERIAL_DIR)
-        # for k, label in MODBUS_LABELS.items():
-        #     v = signal.get(k, None)
-        #     if v is not None:
-        #         self.log(f"ℹ️ {label}: {v}")
-        # Publicación opcional por MQTT
-        self.send_signal(signal, "drive")
+
+        if not signal:
+            return  
+
+        # Filter None
+        payload = {k: v for k, v in signal.items() if v is not None}
+
+        if not payload:
+            return 
+
+        self.send_signal(payload, "drive")
     

@@ -55,6 +55,7 @@ DIR_TYPE_DIR = {
     65: "auto",
     66: "fwd",
     129: "auto",
+    130: "fwd",
     258: "fwd",
     257: "acc"
 }
@@ -181,12 +182,12 @@ class ModbusTcp:
         try:
             rr = self.client.write_register(address, value, device_id=self.slave_id)
             if rr and not rr.isError():
-                self.log(f"▶ Escribio en registro {address} = {value}")
+                self.log(f"TCP Escribio en registro {address} = {value}")
                 return True
             else:
-                self.log(f"❌ Error writing register {address}: {rr}")
+                self.log(f"Error writing register {address}: {rr}")
         except Exception as e:
-            self.log(f"❌ Exception writing register {address}: {e}")
+            self.log(f"Exception writing register {address}: {e}")
 
         return False
 
@@ -199,6 +200,8 @@ class ModbusTcp:
         threading.Thread(target=read_loop, daemon=True).start()
 
     def start_reading(self)-> None:
+        if not self.is_connected():
+            return
         addrs = list(dict.fromkeys(SIGNAL_MODBUS_TCP_DIR.values()))
         self.tcp_poll = self.poll_registers(
             addresses=addrs, interval=self.poll_interval
@@ -223,12 +226,10 @@ class ModbusTcp:
                     try:
                         regs = self.read_holding_registers(addr, 1, count=1)
                         regs_group[addr] = regs[0]
-                        # self.log(f"▶ Polled register {addr}: {regs}")
                     except Exception as e:
                         self.log(f"❌ Exception polling register {addr}: {e}")
                 time.sleep(interval)
                 self._read_callback(regs_group)
-                # self.set_registers(regs_group)
         thread = threading.Thread(target=_poll, daemon=True)
         thread.start()
         return thread
@@ -255,12 +256,19 @@ class ModbusTcp:
         return s
     
     def _read_callback(self, regs):
+        # Construir señal desde registros
         signal = self._build_signal_from_regs(regs, SIGNAL_MODBUS_TCP_DIR)
-        self.send_signal(signal, "drive")
+        if not signal:
+            return  
+        # Filtrar valores None en payload
+        payload = {k: v for k, v in signal.items() if v is not None}
+        if not payload:
+            return 
+        self.send_signal(payload, "drive")
     
     def read_holding_registers(self, address: int, slave_id, count: int = 1) -> list[bool] | None:
         # self.app._log(f"Leyendo el esclavo: {self.app.slave_id_var.get()}")
-        """Reads `count` coils starting at `address`."""
+        """Reads `count` registers starting at `address`."""
         if not self.client:
             self.log("⚠️ Client not connected. Call connect() first.")
             return None
@@ -272,8 +280,8 @@ class ModbusTcp:
                     status = getattr(rr, 'status', None)
                     # self.log(f"▶Registro={address}, Respuesta={regs}, Estado={status}")
                     return regs
-                self.log(f"❌ Error reading coils: {rr}")
+                self.log(f"❌ Error reading registers: {rr}")
             except Exception as e:
-                self.log(f"❌ Exception reading coils: {e}")
+                self.log(f"❌ Exception reading registers: {e}")
         return None
 

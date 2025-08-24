@@ -115,7 +115,7 @@ class AppController:
 
         self.device_manager = DeviceManager(self.mqtt_handler, self.refresh_device_list, self.window._log)
         self.gateway_manager = GatewayManager(self.mqtt_handler, self._refresh_gateway_fields, self.window._log)
-        self.devices = []
+        self.devices = {}
 
 
     # === commands ===
@@ -127,12 +127,16 @@ class AppController:
                     return    
         match command["action"]:
             case "update-status":
-                if(command["params"]["value"] == "on"):
-                    self.log(f"El dispositivo {svc.name} se mando a encender")
+                value = str(command.get("params", {}).get("value", "")).lower()
+                if value == "on":
+                    self.log(f"El dispositivo {ds.name} se mandó a encender")
                     ds.turn_on()
-                else:
-                    self.log(f"El dispositivo {svc.name} se mando a apagar")
+                elif value == "off":
+                    self.log(f"El dispositivo {ds.name} se mandó a apagar")
                     ds.turn_off()
+                elif value == "restart":
+                    self.log(f"El dispositivo {ds.name} se mandó a reiniciar")
+                    ds.restart()
             case "update-connections":
                 ds.update_connection_config(command["params"])
             case "update-config":

@@ -70,7 +70,7 @@ class DeviceService:
         self.logo = LogoModbusClient(self, self.log, self._send_signal)
         self.alive: bool = False
 
-        self.start_default_connections()
+        self.start_connections()
 
     # ---------------------------
     # Lifecycle
@@ -92,7 +92,12 @@ class DeviceService:
         if not any([self.http, self.modbus_tcp, self.modbus_serial, self.logo]):
             self.log(f"⚠️ {self.device_id} has no configured endpoints (HTTP/TCP/Serial/LOGO).")
 
-    def start_default_connections(self):
+    def start_connections(self):
+        
+        self.disconnect_logo()
+        self.connect_logo()
+        self.start_reading_logo()
+
         match self.cc.get("defaultReader"):
             case "serial":
                 self.disconnect_modbus_serial()
@@ -112,26 +117,58 @@ class DeviceService:
         self.alive = False
         self.log(f"⏹️ Stopping DeviceService for {self.device_id}")
 
-    def turn_off(self):
-        changed = False
-        if(self.modbus_tcp.is_connected()):
-            changed = self.modbus_tcp.turn_off()
-        if(self.modbus_serial.is_connected() and not changed):
-            changed = self.modbus_serial.turn_off()
-        if(changed):
-            return self.log(f"se apago el dispositivo {self.name}")
-        return self.log(f"No se pudo apagar el dispositivo {self.name}")
-
     def turn_on(self):
-        changed = False
-        if(self.modbus_tcp.is_connected()):
-            changed = self.modbus_tcp.turn_on()
-        if(self.modbus_serial.is_connected() and not changed):
-            changed = self.modbus_serial.turn_on()
-        if(changed):
-            return self.log(f"se encendio el dispositvio {self.name}")
-        return self.log(f"No se pudo encender el dispositvio {self.name}")
+        for client, label in [
+            (self.logo, "LOGO!"),
+            (self.modbus_tcp, "Modbus TCP"),
+            (self.modbus_serial, "Modbus Serial"),
+        ]:
+            if client.is_connected():
+                changed = client.turn_on()
+                print(f"Probando encender con {label}: {changed}")
+                if changed:
+                    return self.log(f"✅ Se encendió el dispositivo {self.name} usando {label}")
 
+        return self.log(f"❌ No se pudo encender el dispositivo {self.name}")
+
+
+    def turn_off(self):
+        for client, label in [
+            (self.logo, "logo"),
+            (self.modbus_tcp, "modbus_tcp"),
+            (self.modbus_serial, "modbus_serial"),
+        ]:
+            if client.is_connected():
+                changed = client.turn_off()
+                print(f"Probando apagar con {label}: {changed}")
+                if changed:
+                    return self.log(f"✅ Se apagó el dispositivo {self.name} usando {label}")
+
+        return self.log(f"❌ No se pudo apagar el dispositivo {self.name}")
+
+    def set_local(self):
+        changed = self.modbus_serial.set_local()
+        if not changed:
+            self.modbus_tcp.set_local()
+
+    def set_remote(self):
+        changed = self.modbus_serial.set_remote()
+        if not changed:
+            self.modbus_tcp.set_remote()
+
+    def restart(self):
+        for client, label in [
+            (self.logo, "logo"),
+            (self.modbus_tcp, "modbus_tcp"),
+            (self.modbus_serial, "modbus_serial"),
+        ]:
+            if client.is_connected():
+                changed = client.restart()
+                print(f"Probando reiniciar con {label}: {changed}")
+                if changed:
+                    return self.log(f"Se reinicio el dispositivo {self.name} usando {label}")
+
+        return self.log(f"No se pudo reiniciar el dispositivo {self.name}")
 
     def disconnect_all_devices(self) -> None:
         """
@@ -246,7 +283,6 @@ class DeviceService:
                 self.logo.stop()
             except Exception:
                 pass
-        self.logo = None
 
     # ---------------------------
     # Hot config update (reuses helpers)
@@ -275,31 +311,36 @@ class DeviceService:
                 elif v is not None:
                     self.cc[k] = v
 
-            # changed_http = any(prev.get(k) != self.cc.get(k) for k in ("host", "httpPort"))
+            changed_http = any(prev.get(k) != self.cc.get(k) for k in ("host", "httpPort"))
             changed_tcp  = any(prev.get(k) != self.cc.get(k) for k in ("host", "tcpPort"))
             changed_ser  = any(prev.get(k) != self.cc.get(k) for k in ("serialPort", "baudrate", "slaveId"))
-            # changed_logo = any(prev.get(k) != self.cc.get(k) for k in ("logoIp", "logoPort"))
+            changed_logo = any(prev.get(k) != self.cc.get(k) for k in ("logoIp", "logoPort"))
+            changed_mode = prev.get("mode") != self.cc.get("mode")
 
             # if changed_http:
             #     self.log(f"Restarting HTTP ({self.device_id}) due to config change.")
             #     self._stop_http(); self._start_http()
 
-            if changed_tcp:
+            if changed_tcp and self.modbus_tcp.is_connected():
                 self.log(f"Restarting Modbus TCP ({self.device_id}) due to config change.")
                 self.disconnect_modbus_tcp(); self.connect_modbus_tcp()
 
-            if changed_ser:
+            if changed_ser and self.modbus_serial.is_connected():
                 self.log(f"Restarting Modbus Serial ({self.device_id}) due to config change.")
                 self.disconnect_modbus_serial(); self.connect_modbus_serial()
 
-            print("filtered", self.cc["mode"])
+            if(changed_mode):
+                if self.cc["mode"] == "local":
+                    return self.set_local()
+                self.set_remote()
+                print("filtered", self.cc["mode"])
 
-            # if changed_logo:
-            #     self.log(f"Restarting LOGO! ({self.device_id}) due to config change.")
-            #     self._stop_logo(); self._start_logo()
+            if changed_logo:
+                self.log(f"Restarting LOGO! ({self.device_id}) due to config change.")
+                self._stop_logo(); self._start_logo()
 
-            # if not any((changed_http, changed_tcp, changed_ser, changed_logo)):
-            #     self.log("ℹupdate_connection_config: no effective changes in endpoints.")
+            if not any((changed_http, changed_tcp, changed_ser, changed_logo, changed_mode)):
+                self.log("ℹupdate_connection_config: no effective changes in endpoints.")
         self.update_fields(self)
 
 
