@@ -302,13 +302,13 @@ class ModbusSerial:
                 s[name] = None
                 continue
             if name in MODBUS_SCALES:
-                s[name] = v * MODBUS_SCALES[name]
+                s[name] = {"value": v * MODBUS_SCALES[name], "kind": "operation"} 
             else:
-                s[name] = v
+                s[name] = {"value": v, "kind": "operation"}
             if(name == "stat"):
-                s[name] = STATUS_TYPES_DIR[v]
+                s[name] = {"value": STATUS_TYPES_DIR.get(v, f"Desconocido ({v})"), "kind": "operation"}
             if(name == "dir"):
-                s[name] = DIR_TYPE_DIR[v]
+                s[name] = {"value": DIR_TYPE_DIR.get(v, {f"Desconocido ({v})"}),  "kind": "operation" }
         return s
 
     def set_local(self) -> bool:

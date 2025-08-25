@@ -210,38 +210,41 @@ class LogoModbusClient:
                 continue
 
             if name == "status":
-                # Mapeo de códigos de estado/falla
                 status_map = {
-                    163: "Operando",
-                    97: "Alta presión (conteo)",
-                    32: "Falla: bajo nivel",
-                    35: "Apagado por selector",
-                    33: "Selector Fuera",
-                    608: "Falla bajo nivel",
-                    577: "Falla de voltaje",
-                    4707: "Desaceleracion",
-                    545: "Reposo",
-                    547: "Desaceleracion",
-                    609: "Paro por alta precion",
-                    673: "Encendido por selector",
-                    737: "Aceleracion",
-                    611: "Desaceleracion",
-                    1569: "Falla de confirma",
-                    4705: "En Transito",
-                    739: "Operacion",
-                    1633: "Falla de confirma",
-                    34: "Falla: bajo nivel",
-                    1: "Falla de voltaje",
-                    3: "Falla de voltaje",
-                    41: "Falla térmica/variador",
-                    675: "Operacion",
-                    161: "Arranque fallido (LOGO envía señal, contactor/variador no encienden)",
+                    163: {"value": "Operando", "kind": "operation"},
+                    97: {"value": "Alta presión (conteo)", "kind": "operation"},
+                    32: {"value": "Falla: bajo nivel", "kind": "fault"},
+                    35: {"value": "Apagado por selector", "kind": "operation"},
+                    33: {"value": "Selector Fuera", "kind": "operation"},
+                    608: {"value": "Falla bajo nivel", "kind": "fault"},
+                    577: {"value": "Falla de voltaje", "kind": "fault"},
+                    4707: {"value": "Desaceleracion", "kind": "operation"},
+                    545: {"value": "Reposo", "kind": "operation"},
+                    547: {"value": "Desaceleracion", "kind": "operation"},
+                    609: {"value": "Paro por alta precion", "kind": "operation"},
+                    673: {"value": "Encendido por selector", "kind": "operation"},
+                    737: {"value": "Aceleracion", "kind": "operation"},
+                    611: {"value": "Desaceleracion", "kind": "operation"},
+                    1569: {"value": "Falla de confirma", "kind": "fault"},
+                    4705: {"value": "En Transito", "kind": "operation"},
+                    739: {"value": "Operacion", "kind": "operation"},
+                    1633: {"value": "Falla de confirma", "kind": "fault"},
+                    34: {"value": "Falla: bajo nivel", "kind": "fault"},
+                    1: {"value": "Falla de voltaje", "kind": "fault"},
+                    3: {"value": "Falla de voltaje", "kind": "fault"},
+                    41: {"value": "Falla térmica/variador", "kind": "fault"},
+                    675: {"value": "Operacion", "kind": "operation"},
+                    161: {"value": "Arranque fallido (LOGO envía señal, contactor/variador no encienden)", "kind": "fault"},
                 }
-                signal[name] = status_map.get(value, f"Desconocido ({value})")
-            else:
-                # Para los tiempos, dejamos el valor numérico tal cual
-                signal[name] = value
 
+                signal[name] = status_map.get(
+                    value,
+                    {"value": f"Desconocido ({value})", "kind": "error"}
+                )
+
+            else:
+                # Para otros registros dejamos el valor numérico
+                signal[name] = { "value":value, "kind": "operation"}
         return signal
 
     def _read_callback(self, regs):
