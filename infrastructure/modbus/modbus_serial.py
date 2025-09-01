@@ -1,5 +1,7 @@
 import threading
 import time
+import os
+import glob
 from pymodbus.client import ModbusSerialClient
 from pymodbus.exceptions import ModbusException
 from serial import Serial
@@ -89,37 +91,41 @@ class ModbusSerial:
     """
     Manages a Modbus RTU connection over a serial port (RS-485).
     """
-    def __init__(self, app, send_signal, log=print):
-        self.app = app
+    def __init__(self, device, send_signal, log, port, baudrate, slave_id):
+        self.device = device
         self.log = log
         self.send_signal = send_signal
         self.client: ModbusSerialClient | None = None
         self._lock = threading.Lock()
         self.poll_interval = 0.5
+        self.port = port
+        self.baudrate = baudrate
+        self.slave_id = slave_id
 
     def connect(
         self,
-        port: str,
-        baudrate: int = 9600,
-        slave_id: int = 1,
         timeout: float = 3.0
     ) -> bool:
         """
         Opens the Modbus RTU client over a serial port.
         Returns True if connection succeeded.
         """
-        self.port = port
-        self.baudrate = baudrate
-        self.slave_id = slave_id
-
+        print("connectando a serial")
         try:
             # Test the following
-            # if not os.path.exists(self.port):
-            #     self.log(f"❌ Serial device {self.port} not found.")
-            #     return False
+            abailable_ports = glob.glob(self.port)
+            if not abailable_ports:
+                print(f"No abailable ports found.")
+                return False
+            print("abailable_ports", abailable_ports)
+            connect_port = abailable_ports[0]
 
+            if not os.path.exists(connect_port):
+                print(f"Serial device {connect_port} not found.")
+                return False
+            print("before connect", connect_port)
             self.client = ModbusSerialClient(
-                port=self.port,
+                port=connect_port,
                 baudrate=self.baudrate,
                 parity="N",
                 stopbits=1,
@@ -129,6 +135,8 @@ class ModbusSerial:
             )
 
             connected = self.client.connect()
+            
+            print("connected", connected)
             if connected:
                 try:
                     transport = getattr(self.client, 'socket', None)
@@ -140,27 +148,30 @@ class ModbusSerial:
                             delay_before_rx=None
                         )
                 except Exception as e:
-                    self.log(f"⚠️ RS-485 mode not supported: {e}")
+                    self.log(f"RS-485 mode not supported: {e}")
 
-                self.log(f"✅ Connected to {self.port}@{self.baudrate} (slave={self.slave_id})")
+                self.log(f"Connected to {self.port}@{self.baudrate} (slave={self.slave_id})")
             else:
-                self.log(f"❌ Failed to connect on {self.port}@{self.baudrate}")
+                self.log(f"Failed to connect on {self.port}@{self.baudrate}")
             return connected
 
         except OSError as e:
+            print(e)
             if e.errno == errno.ENOENT:
-                self.log(f"❌ Device {self.port} not found.")
+                self.log(f"Device {self.port} not found.")
             elif e.errno == errno.EACCES:
-                self.log(f"❌ Permission denied for {self.port}. Try adding user to 'dialout' group.")
+                self.log(f"Permission denied for {self.port}. Try adding user to 'dialout' group.")
             else:
-                self.log(f"❌ OS error on {self.port}: {e}")
+                self.log(f"OS error on {self.port}: {e}")
             return False
 
         except ModbusException as e:
+            print(e)
             self.log(f"❌ Modbus exception: {e}")
             return False
 
         except Exception as e:
+            print(e)
             self.log(f"❌ Unexpected error on {self.port}: {e}")
             return False
 
@@ -181,19 +192,53 @@ class ModbusSerial:
             finally:
                 self.client = None
 
-    def poll_registers(
-        self,
-        addresses: list[int],
-        interval: float = 0.5
-    ) -> threading.Thread:
-        """
-        Starts a background thread that continuously polls holding registers.
+    def update_config(self, port=None, baudrate=None, slave_id=None):
+        """Update serial parameters and reconnect if needed."""
+        changed = False
 
-        :param addresses: List of register addresses to read (count=1 each).
-        :param interval: Seconds to wait between polling cycles.
-        :returns: The Thread object running the polling loop.
-        """
+        if port and port != self.port:
+            self.port = port
+            changed = True
+
+        if baudrate and baudrate != self.baudrate:
+            self.baudrate = baudrate
+            changed = True
+
+        if slave_id and slave_id != self.slave_id:
+            self.slave_id = slave_id
+            changed = True
+
+        if changed:
+            self.log(f"🔄 Updating config: {self.port}@{self.baudrate}, slave={self.slave_id}")
+            return self.reconnect()
+
+        return True
+
+    def handle_disconnect(self):
+        self.disconnect()
+        self.device.update_connected()
+        threading.Thread(target=self.auto_reconnect, daemon=True).start()
+
+    def auto_reconnect(self, delay: float = 5.0):
+        if getattr(self, "_reconnecting", False):
+            return
+        self._reconnecting = True
+        self.disconnect()
+        print("iniciando conexion serial")
+        while True:
+            if self.connect():
+                print("Conexión establecida a Modbus Serial")
+                self.device.update_connected()
+                self.start_reading()
+                self._reconnecting = False
+                return 
+
+            print(f"❌ No se pudo conectar Serial, reintentando en {delay}s...")
+            time.sleep(delay)
+
+    def poll_registers(self, addresses: list[int], interval: float = 0.5) -> threading.Thread:
         def _poll():
+            failure_count = 0
             while True:
                 regs_group = {}
                 for addr in addresses:
@@ -201,14 +246,25 @@ class ModbusSerial:
                         regs = self.read_holding_registers(addr, count=1)
                         if regs:
                             regs_group[addr] = regs[0]
-                        # self.log(f"▶ Polled register {addr}: {regs}")
+                            failure_count = 0
+                        else:
+                            failure_count += 1
                     except Exception as e:
-                        self.log(f"❌ Exception polling register {addr}: {e}")
+                        self.log(f"Exception polling register {addr}: {e}")
+                        failure_count += 1
+
+                if failure_count >= 3:
+                    self.log("Modbus serial parece desconectado")
+                    self.handle_disconnect()
+                    return
+
                 time.sleep(interval)
                 self.on_modbus_serial_read_callback(regs_group)
+
         thread = threading.Thread(target=_poll, daemon=True)
         thread.start()
         return thread
+
 
     def is_connected(self) -> bool:
         """
@@ -257,7 +313,7 @@ class ModbusSerial:
         try:
             rr = self.client.write_register(address, value, device_id=self.slave_id)
             if rr and not rr.isError():
-                print(f"Serial Escribio en registro {address} = {value}")
+                self.log(f"Serial Escribio en registro {address} = {value}")
                 return True
             else:
                 self.log(f"❌ Error writing register {address}: {rr}")
@@ -341,7 +397,6 @@ class ModbusSerial:
 
         # Filter None
         payload = {k: v for k, v in signal.items() if v is not None}
-
         if not payload:
             return 
 

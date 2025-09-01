@@ -57,7 +57,8 @@ DIR_TYPE_DIR = {
     129: "auto",
     130: "fwd",
     258: "fwd",
-    257: "acc"
+    257: "acc",
+    193: "auto"
 }
 
 DEVICE = {
@@ -78,21 +79,58 @@ DEVICE = {
 }
 
 class ModbusTcp:
-    def __init__(self, controller, send_signal, log):
+    def __init__(self, device, send_signal, log, ip, port, slave_id):
+        self.ip = ip
+        self.port = port
+        self.slave_id = slave_id
         self.send_signal = send_signal
-        self.controller = controller
+        self.device = device
         self.client = None
         self.log = log
         self._lock = threading.Lock()
         self.poll_interval = 0.5
 
-    def connect(self, ip, port, slave_id) -> bool:
-        self.log(f"🔌 Iniciando conexión Modbus TCP a {ip}:{port}")
-        self.slave_id = slave_id
-        try:
-            port = int(port)
+    def handle_disconnect(self):
+        self.disconnect()
+        self.device.update_connected()
+        threading.Thread(target=self.auto_reconnect, daemon=True).start()
 
-            # Cierra cliente previo si existía
+    def auto_reconnect(self, delay: float = 5.0):
+        if getattr(self, "_reconnecting", False):
+            return
+        self._reconnecting = True
+        self.disconnect()
+        print("iniciando conexion")
+        while True:
+            if self.connect():
+                print("Conexión establecida a ModbusTcp")
+                self.device.update_connected()
+                self.start_reading()
+                self._reconnecting = False
+                return  # salimos: ya está conectado y polling en marcha
+
+            print(f"❌ No se pudo conectar TCP, reintentando en {delay}s...")
+            time.sleep(delay)
+
+    def disconnect(self) -> None:
+        """
+        Closes the Modbus and serial connection.
+        """
+        if self.client:
+            try:
+                port_obj = self.client.port if hasattr(self.client, 'port') else None
+                self.client.close()
+                if hasattr(port_obj, 'close'):
+                    port_obj.close()
+                self.log("Modbus TCP disconnected")
+            except Exception as e:
+                self.log(f"Error during disconnect: {e}")
+            finally:
+                self.client = None
+
+    def connect(self) -> bool:
+        self.log(f"Iniciando conexión Modbus TCP a {self.ip}:{self.port}")
+        try:
             if getattr(self, "client", None):
                 try:
                     self.client.close()
@@ -100,19 +138,20 @@ class ModbusTcp:
                     pass
                 self.client = None
             
-            self.client = ModbusTcpClient(host=ip, port=port, timeout=3.0)
-
+            self.client = ModbusTcpClient(host=self.ip, port=self.port, timeout=1.0, retries=0)
             if not self.client.connect():
-                self.log(f"❌ No se pudo conectar a {ip}:{port}")
+                self.log(f"No se pudo conectar a {self.ip}:{self.port}")
                 try:
                     self.client.close()
                 except Exception:
                     pass
                 self.client = None
                 return False
+            self.log("se connecto por medio de TCP")
+            return True
 
         except Exception as e:
-            self.log(f"❌ Error conectando a {ip}:{port}: {e}")
+            self.log(f"Error conectando a {ip}:{port}: {e}")
             try:
                 if self.client:
                     self.client.close()
@@ -208,32 +247,39 @@ class ModbusTcp:
         )
 
     def poll_registers(
-        self,
-        addresses: list[int],
-        interval: float = 0.5
-    ) -> threading.Thread:
-        """
-        Starts a background thread that continuously polls holding registers.
-
-        :param addresses: List of register addresses to read (count=1 each).
-        :param interval: Seconds to wait between polling cycles.
-        :returns: The Thread object running the polling loop.
-        """
+    self,
+    addresses: list[int],
+    interval: float = 0.5
+) -> threading.Thread:
         def _poll():
+            failure_count = 0
             while True:
                 regs_group = {}
+
                 for addr in addresses:
                     try:
-                        regs = self.read_holding_registers(addr, 1, count=1)
-                        regs_group[addr] = regs[0]
+                        regs = self.read_holding_registers(addr, self.slave_id, count=1)
+                        if regs is not None:
+                            regs_group[addr] = regs[0]
+                            failure_count = 0
+                        if not regs:
+                            failure_count += 1
+                        if failure_count >= 3:
+                            self.log("Modbus TCP parece desconectado")
+                            self.handle_disconnect()
+                            return
+
                     except Exception as e:
                         self.log(f"❌ Exception polling register {addr}: {e}")
+                        failure_count += 1
                 time.sleep(interval)
                 self._read_callback(regs_group)
+                
+
         thread = threading.Thread(target=_poll, daemon=True)
         thread.start()
         return thread
-    
+
     def _build_signal_from_regs(self, regs: dict[int, int], modbus_dir) -> dict:
         """
         Crea dict de señal a partir de registros, aplicando escalas definidas en MODBUS_SCALES.
@@ -249,9 +295,9 @@ class ModbusTcp:
             else:
                 s[name] =  { "value":  v, "kind": "operation"} 
             if(name == "stat"):
-                s[name] = { "value": STATUS_TYPES_DIR[v], "kind": "operation"} 
+                s[name] = { "value": STATUS_TYPES_DIR.get(v, "Desconocido {v}"), "kind": "operation"} 
             if(name == "dir"):
-                s[name] = { "value": DIR_TYPE_DIR[v], "kind": "operation"}
+                s[name] = { "value": DIR_TYPE_DIR.get(v, "Desconocido {v}"), "kind": "operation"}
             
         return s
     

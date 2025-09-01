@@ -93,6 +93,9 @@ class MqttClient:
 
     def _topic_subscribe_device_resp(self, org_id: str, gw_id: str) -> str:
         return f"tenant/{org_id}/gateway/{gw_id}/device/response"
+    
+    def _topic_publish_device_status(self, org_id:str, gw_id: str, serial:str) -> str:
+        return f"tenant/{org_id}/gateway/{gw_id}/device/{serial}/status"
 
     # ---------- Connection ----------
     def connect(self) -> None:
@@ -184,6 +187,11 @@ class MqttClient:
         self.on_initial_load()
         self._connected_evt.set()
 
+    def on_change_device_connection(self, device_serial, status, logo_status):
+        print(f"Dispositivo {device_serial} {status}")
+        device_connection_topic = self._topic_publish_device_status(self.org_id, self.gw_id, device_serial)
+        self._publish(device_connection_topic, json.dumps({"status": status, "logoStatus": logo_status}), qos=1)
+
     def on_disconnect(self, client: mqtt.Client, userdata, flags, reason_code, properties=None) -> None:
         self.log(f"⚠️ Disconnected (rc={reason_code})")
         self._connected_evt.clear()
@@ -233,6 +241,7 @@ class MqttClient:
             info = self.client.publish(topic, payload, qos=qos)
             if info.rc != mqtt.MQTT_ERR_SUCCESS:
                 self.log(f"⚠️ publish() failed rc={info.rc} topic={topic}")
+                print(self.log(f"⚠️ publish() failed rc={info.rc} topic={topic}"))
                 return False
             return True
         except Exception as e:

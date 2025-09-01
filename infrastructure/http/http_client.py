@@ -93,3 +93,13 @@ class HttpClient:
         except Exception as e:
             self.log(f'❌ HTTP exception {url}: {e}')
         return None
+
+    def is_connected(self) -> bool:
+        return (
+            self.running
+            and self.loop is not None
+            and self._loop_thread is not None
+            and self._loop_thread.is_alive()
+            and self._session is not None
+            and not self._session.closed
+        )

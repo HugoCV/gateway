@@ -25,36 +25,68 @@ SIGNAL_LOGO_DIR = {
 }
 
 class LogoModbusClient:
-    def __init__(self, app, log, send_signal):
+    def __init__(self, device, log, send_signal, host, port):
+        self.host = host
+        self.port = port
         self.log = log
-        self.controller = app
+        self.device = device
         self.send_signal = send_signal
         self.client = None
+        self._reconnecting = False
 
-    def connect(self, host: str, port: int) -> bool:
+    def connect(self) -> bool:
         """
         Attempt to open a Modbus TCP connection to the given host and port.
         Returns True on success, False on failure or exception.
         """
-        self.log(f"▶ Conectando a {host}:{port}…")
-        self.host = host
-        self.port = port
+        self.log(f"▶ Conectando a logo {self.host}:{self.port}…")
         try:
-            self.client = ModbusTcpClient(host=host, port=port)
+            self.client = ModbusTcpClient(host=self.host, port=self.port, timeout=1.0, retries=0)
             ok = self.client.connect()
             if ok:
-                self.log(f"✅ Connectado al Modbus TCP al host:{host} puerto:{port}")
+                print(f"Connectado al LOGO al host:{self.host} puerto:{self.port}")
                 return True
             else:
-                self.log(f"❌La conexion a {host}:{port} fallo")
+                self.log(f"La conexion a {self.host}:{self.port} fallo")
                 return False
 
         except Exception as e:
-            self.log(f"❌ Exception during TCP connect to {host}:{port}: {e}")
+            self.log(f"Exception during TCP connect to {self.host}:{self.port}: {e}")
             return False
 
-    def disconnect(self):
-        self.client.close()
+    def auto_reconnect(self, delay: float = 5.0):
+        if getattr(self, "_reconnecting", False):
+            return
+
+        self._reconnecting = True
+        print("iniciando conexion LOGO")
+        self.disconnect()
+        while True:
+            if self.connect():
+                print("Conexión establecida a LOGO")
+                self.device.update_connected()
+                self.start_reading()
+                self._reconnecting = False
+                return 
+
+            print(f"No se pudo conectar al LOGO, reintentando en {delay}s...")
+            time.sleep(delay)
+
+    def disconnect(self) -> None:
+        """
+        Closes the Modbus and serial connection.
+        """
+        if self.client:
+            try:
+                port_obj = self.client.port if hasattr(self.client, 'port') else None
+                self.client.close()
+                if hasattr(port_obj, 'close'):
+                    port_obj.close()
+                self.log("Modbus TCP disconnected")
+            except Exception as e:
+                self.log(f"Error during disconnect: {e}")
+            finally:
+                self.client = None
 
     def read_holding_registers(self, address, count=1, unit=1):
         result = self.client.read_holding_registers(address=address, count=count, unit=unit)
@@ -62,10 +94,7 @@ class LogoModbusClient:
 
     
     def write_single_register(self, address: int, value: int) -> bool:
-        """
-        Escribe un único registro Modbus (dirección y valor).
-        Gestiona errores de conexión y reintento tras reconexión.
-        """
+
         try:
             rr = self.client.write_register(address, value)
             return rr is not None and not rr.isError()
@@ -157,7 +186,6 @@ class LogoModbusClient:
 
         except OSError as e:
             self.log(f"Error de conexión: {e}")
-            # Forzar cierre + reconexión
             try:
                 self.client.close()
                 if self.client.connect():
@@ -172,31 +200,37 @@ class LogoModbusClient:
         except Exception as e:
             self.log(f"Exception reading registers: {e}")
             return None
+    def handle_disconnect(self):
+        self.disconnect()
+        self.device.update_connected()
+        threading.Thread(target=self.auto_reconnect, daemon=True).start()
 
-    def poll_registers(
-        self,
-        addresses: list[int],
-        interval: float = 0.5,
-    ) -> threading.Thread:
-        """
-        Inicia un hilo en background que consulta registros en loop.
-
-        :param addresses: Lista de direcciones de registros a leer (1 registro cada una).
-        :param interval: Segundos a esperar entre ciclos de polling.
-        :returns: El objeto Thread ejecutando el polling.
-        """
+    def poll_registers(self, addresses: list[int], interval: float = 0.5) -> threading.Thread:
         def _poll():
+            failure_count = 0
             while True:
                 regs_group: dict[int, int] = {}
+
                 for addr in addresses:
                     try:
                         regs = self.read_registers(addr, 1)
                         if regs is not None:
                             regs_group[addr] = regs[0]
+                            failure_count = 0 
+                        else:
+                            failure_count += 1
                     except Exception as e:
-                        self.log(f"❌ Exception polling register {addr}: {e}")
+                        self.log(f"Exception polling register {addr}: {e}")
+                        failure_count += 1
+
+                if failure_count >= 3:
+                    self.log("LogoModbusClient parece desconectado")
+                    self.handle_disconnect()
+                    return
+
                 time.sleep(interval)
                 self._read_callback(regs_group)
+
         thread = threading.Thread(target=_poll, daemon=True)
         thread.start()
         return thread
@@ -239,7 +273,7 @@ class LogoModbusClient:
 
                 signal[name] = status_map.get(
                     value,
-                    {"value": f"Desconocido ({value})", "kind": "error"}
+                    {"value": f"Desconocido ({value})", "kind": "operation"}
                 )
 
             else:
@@ -270,19 +304,17 @@ class LogoModbusClient:
     def turn_on(self):
         if(self.is_connected()):
             return self.write_coil(3, 1)
-        print("turn on")
 
     def restart(self):
         if(self.is_connected()):
             return self.write_coil(5, 1)
-        print("restart")
     
     def turn_off(self):
         if(self.is_connected()):
             return self.write_coil(4, 1)
 
     def start_reading(self) -> None:
-        if(self.client):
+        if(self.is_connected()):
             addrs = list(dict.fromkeys(SIGNAL_LOGO_DIR.values()))
             self.poll_registers(addrs)
 
@@ -290,7 +322,6 @@ class LogoModbusClient:
         """Write coil and returns True if no error."""
         try:
             rr = self.client.write_coil(address, bool(value))
-            print("logo rc", rr)
             return (rr is not None) and (not rr.isError())
         except Exception:
             return False
