@@ -104,7 +104,7 @@ class ModbusSerial:
 
     def connect(
         self,
-        timeout: float = 3.0
+        timeout: float = 1.0
     ) -> bool:
         """
         Opens the Modbus RTU client over a serial port.
@@ -131,7 +131,7 @@ class ModbusSerial:
                 stopbits=1,
                 bytesize=8,
                 timeout=timeout,
-                retries=3,
+                retries=0,
             )
 
             connected = self.client.connect()
@@ -210,31 +210,44 @@ class ModbusSerial:
 
         if changed:
             self.log(f"🔄 Updating config: {self.port}@{self.baudrate}, slave={self.slave_id}")
-            return self.reconnect()
-
-        return True
+            self.stop_reconnect()
+            threading.Thread(target=self.auto_reconnect, daemon=True).start()
+            return True
+        return False
 
     def handle_disconnect(self):
+        print("handle_disconnect")
         self.disconnect()
         self.device.update_connected()
         threading.Thread(target=self.auto_reconnect, daemon=True).start()
 
     def auto_reconnect(self, delay: float = 5.0):
         if getattr(self, "_reconnecting", False):
+            print("Ya hay un auto_reconnect corriendo, no se lanza otro.")
             return
+
         self._reconnecting = True
+        self._running = True
         self.disconnect()
         print("iniciando conexion serial")
-        while True:
+
+        while self._running:
             if self.connect():
-                print("Conexión establecida a Modbus Serial")
+                print("✅ Conexión establecida a Modbus Serial")
                 self.device.update_connected()
                 self.start_reading()
-                self._reconnecting = False
-                return 
+                break 
 
             print(f"❌ No se pudo conectar Serial, reintentando en {delay}s...")
             time.sleep(delay)
+
+        self._reconnecting = False
+
+
+    def stop_reconnect(self):
+        """Detiene el loop de auto_reconnect si está corriendo."""
+        self._running = False
+        self.disconnect()
 
     def poll_registers(self, addresses: list[int], interval: float = 0.5) -> threading.Thread:
         def _poll():

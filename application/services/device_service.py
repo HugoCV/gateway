@@ -139,33 +139,30 @@ class DeviceService:
         self.log(f"⏹️ Stopping DeviceService for {self.device_id}")
 
     def turn_on(self):
-        for client, label in [
-            (self.logo, "LOGO!"),
-            (self.modbus_tcp, "Modbus TCP"),
-            (self.modbus_serial, "Modbus Serial"),
-        ]:
-            if client.is_connected():
-                changed = client.turn_on()
-                print(f"Probando encender con {label}: {changed}")
-                if changed:
-                    return self.log(f"✅ Se encendió el dispositivo {self.name} usando {label}")
-
-        return self.log(f"❌ No se pudo encender el dispositivo {self.name}")
+        changed = False
+        if self.cc["mode"] == "remote":
+            if self.modbus_tcp.is_connected():
+                changed = self.modbus_tcp.turn_on()
+            if not changed and self.modbus_serial.is_connected():
+                changed = self.modbus_serial.turn_on()
+        elif self.cc["mode"] == "local":
+            if self.logo.is_connected():
+                changed = self.logo.turn_on()
+        print(f"Probando encender con {self.cc['mode']}: {changed}")
 
 
     def turn_off(self):
-        for client, label in [
-            (self.logo, "logo"),
-            (self.modbus_tcp, "modbus_tcp"),
-            (self.modbus_serial, "modbus_serial"),
-        ]:
-            if client.is_connected():
-                changed = client.turn_off()
-                print(f"Probando apagar con {label}: {changed}")
-                if changed:
-                    return self.log(f"✅ Se apagó el dispositivo {self.name} usando {label}")
+        changed = False
+        if self.cc["mode"] == "remote":
+            if self.modbus_tcp.is_connected():
+                changed = self.modbus_tcp.turn_off()
+            if not changed and self.modbus_serial.is_connected():
+                changed = self.modbus_serial.turn_off()
+        elif self.cc["mode"] == "local":
+            if self.logo.is_connected():
+                changed = self.logo.turn_off()
+        print(f"Probando apagar con {self.cc['mode']}: {changed}")
 
-        return self.log(f"❌ No se pudo apagar el dispositivo {self.name}")
 
     def set_local(self):
         changed = self.modbus_serial.set_local()
@@ -178,19 +175,16 @@ class DeviceService:
             self.modbus_tcp.set_remote()
 
     def restart(self):
-        for client, label in [
-            (self.logo, "logo"),
-            (self.modbus_tcp, "modbus_tcp"),
-            (self.modbus_serial, "modbus_serial"),
-        ]:
-            if client.is_connected():
-                changed = client.restart()
-                print(f"Probando reiniciar con {label}: {changed}")
-                if changed:
-                    return self.log(f"Se reinicio el dispositivo {self.name} usando {label}")
-
-        return self.log(f"No se pudo reiniciar el dispositivo {self.name}")
-
+        changed = False
+        if self.cc["mode"] == "remote":
+            if self.modbus_tcp.is_connected():
+                changed = self.modbus_tcp.restart()
+            if not changed and self.modbus_serial.is_connected():
+                changed = self.modbus_serial.restart()
+        elif self.cc["mode"] == "local":
+            if self.logo.is_connected():
+                changed = self.logo.restart()
+        print(f"Probando reiniciar con {self.cc['mode']}: {changed}")
 
     # ---------------------------
     # Connection helpers (connect/disconnect)
@@ -300,6 +294,7 @@ class DeviceService:
             
             prev = dict(self.cc)
 
+
             # Merge (partial): new/updated keys; None values remove key
             for k, v in filtered.items():
                 if v is None and k in self.cc:
@@ -308,7 +303,7 @@ class DeviceService:
                     self.cc[k] = v
 
             # changed_http = any(prev.get(k) != self.cc.get(k) for k in ("host", "httpPort"))
-            changed_tcp  = any(prev.get(k) != self.cc.get(k) for k in ("host", "tcpPort"))
+            changed_tcp  = any(prev.get(k) != self.cc.get(k) for k in ("host", "tcpPort", "slaveId"))
             changed_ser  = any(prev.get(k) != self.cc.get(k) for k in ("serialPort", "baudrate", "slaveId"))
             changed_logo = any(prev.get(k) != self.cc.get(k) for k in ("logoIp", "logoPort"))
             changed_mode = prev.get("mode") != self.cc.get("mode")
@@ -317,23 +312,24 @@ class DeviceService:
             #     self.log(f"Restarting HTTP ({self.device_id}) due to config change.")
             #     self._stop_http(); self._start_http()
 
-            if changed_tcp and self.modbus_tcp.is_connected():
-                self.log(f"Restarting Modbus TCP ({self.device_id}) due to config change.")
-                self.update_config(self.cc.get("serialPort"), self.cc.get("baudrate"), self.cc.get("slaveId"))
+            if changed_tcp:
+                print(f"Restarting Modbus TCP ({self.device_id}) due to config change.")
+                self.modbus_tcp.update_config(self.cc.get("host"), self.cc.get("tcpPort"), self.cc.get("slaveId"))
+
 
             if changed_ser and self.modbus_serial.is_connected():
                 self.log(f"Restarting Modbus Serial ({self.device_id}) due to config change.")
-                self.disconnect_modbus_serial(); self.connect_modbus_serial()
+                self.modbus_serial.update_config(self.cc.get("serialPort"), self.cc.get("baudrate"), self.cc.get("slaveId"))
 
             if(changed_mode):
+                print("filtered", self.cc["mode"])
                 if self.cc["mode"] == "local":
                     return self.set_local()
                 self.set_remote()
-                print("filtered", self.cc["mode"])
 
             if changed_logo:
                 self.log(f"Restarting LOGO! ({self.device_id}) due to config change.")
-                self._stop_logo(); self._start_logo()
+                self.logo.update_config(self.cc.get("serialPort"), self.cc.get("baudrate"), self.cc.get("slaveId"))
 
             if not any((changed_tcp, changed_ser, changed_logo, changed_mode)):
                 self.log("ℹupdate_connection_config: no effective changes in endpoints.")

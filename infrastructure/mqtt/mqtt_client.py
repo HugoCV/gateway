@@ -25,9 +25,11 @@ class MqttClient:
         gateway: Dict[str, Any],
         on_initial_load: Callable[[], None],
         log_callback: Callable[[str], None],
-        command_callback: Callable[[Optional[str], Any], None]
+        command_callback: Callable[[Optional[str], Any], None],
+        command_gateway_callback: Callable[[Optional[str], Any], None]
     ) -> None:
         self.log = log_callback
+        self.command_gateway_callback = command_gateway_callback
         self.command_callback = command_callback
         self.on_initial_load = on_initial_load
 
@@ -49,6 +51,7 @@ class MqttClient:
 
         # Topics (convenience variables built once)
         self.deviceCommandTopic = self._topic_subscribe_command(self.org_id, self.gw_id)
+        self.gatewayCommandTopic = self._topic_subscribe_gateway_command(self.org_id, self.gw_id)
         self.gatewayRespTopic = self._topic_subscribe_gateway_resp(self.org_id, self.gw_id)
         self.gatewayReqTopic = self._topic_publish_gateway_req(self.org_id, self.gw_id)
         self.deviceReqTopic = self._topic_publish_device_req(self.org_id, self.gw_id)
@@ -81,6 +84,9 @@ class MqttClient:
 
     def _topic_subscribe_command(self, org_id: str, gw_id: str) -> str:
         return f"tenant/{org_id}/gateway/{gw_id}/device/+/command"
+
+    def _topic_subscribe_gateway_command(self, org_id: str, gw_id: str) -> str:
+        return f"tenant/{org_id}/gateway/{gw_id}/command"
 
     def _topic_subscribe_gateway_resp(self, org_id: str, gw_id: str) -> str:
         return f"tenant/{org_id}/gateway/{gw_id}/config/response"
@@ -181,6 +187,8 @@ class MqttClient:
         client.subscribe(self.deviceCommandTopic, qos=1)
         self.log(f"📡 Subscribed to commands: {self.deviceCommandTopic}")
 
+        client.subscribe(self.gatewayCommandTopic, qos=1)
+        self.log(f"📡 Subscribed to commands: {self.gatewayCommandTopic}")
         # Publish online status
         online_topic = f"tenant/{self.org_id}/gateway/{self.gw_id}/status"
         self._publish(online_topic, json.dumps({"status": "online"}), qos=1)
@@ -201,6 +209,7 @@ class MqttClient:
             self.log(f"[MQTT-{level}] {buf}")
 
     def on_message(self, client, userdata, msg):
+        print("ON MESSAGE")
         if topic_matches_sub(self.deviceCommandTopic, msg.topic):
             parts = msg.topic.split("/")
             try:
@@ -212,8 +221,19 @@ class MqttClient:
                 payload = json.loads(msg.payload.decode("utf-8"))
             except Exception:
                 payload = msg.payload  # raw if not JSON
+            print("")
             self.command_callback(device_id, payload)
             self.log(f"[MQTT-CMD] device={device_id} payload={payload}")
+            return
+        if topic_matches_sub(self.gatewayCommandTopic, msg.topic):
+
+            parts = msg.topic.split("/")
+            try:
+                payload = json.loads(msg.payload.decode("utf-8"))
+            except Exception:
+                payload = msg.payload
+            self.command_gateway_callback(payload)
+            self.log(f"[MQTT-CMD] payload={payload}")
             return
 
         # Config response

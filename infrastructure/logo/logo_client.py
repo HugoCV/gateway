@@ -59,18 +59,20 @@ class LogoModbusClient:
             return
 
         self._reconnecting = True
-        print("iniciando conexion LOGO")
+        self._running = True
         self.disconnect()
-        while True:
+        print("iniciando conexion LOGO")
+        while self._running:
             if self.connect():
                 print("Conexión establecida a LOGO")
                 self.device.update_connected()
                 self.start_reading()
                 self._reconnecting = False
-                return 
+                break 
 
             print(f"No se pudo conectar al LOGO, reintentando en {delay}s...")
             time.sleep(delay)
+        self._reconnecting = False
 
     def disconnect(self) -> None:
         """
@@ -245,6 +247,8 @@ class LogoModbusClient:
 
             if name == "status":
                 status_map = {
+                    0: {"value":"Logo fuera de servicio"},
+                    512: {"value":"Logo reiniciando"},
                     163: {"value": "Operando", "kind": "operation"},
                     97: {"value": "Alta presión (conteo)", "kind": "operation"},
                     32: {"value": "Falla: bajo nivel", "kind": "fault"},
@@ -325,4 +329,32 @@ class LogoModbusClient:
             return (rr is not None) and (not rr.isError())
         except Exception:
             return False
+    
+    def update_config(self, port=None, baudrate=None, slave_id=None):
+        """Update serial parameters and reconnect if needed."""
+        changed = False
+
+        if port and port != self.port:
+            self.port = port
+            changed = True
+
+        if baudrate and baudrate != self.baudrate:
+            self.baudrate = baudrate
+            changed = True
+
+        if slave_id and slave_id != self.slave_id:
+            self.slave_id = slave_id
+            changed = True
+
+        if changed:
+            self.log(f"🔄 Updating config: {self.port}@{self.baudrate}, slave={self.slave_id}")
+            self.stop_reconnect()
+            threading.Thread(target=self.auto_reconnect, daemon=True).start()
+            return True
+        return False
+
+    def stop_reconnect(self):
+        """Detiene el loop de auto_reconnect si está corriendo."""
+        self._running = False
+        self.disconnect()
 

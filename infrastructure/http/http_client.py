@@ -43,16 +43,6 @@ class HttpClient:
         }
         self.faultEndpoint = f'{self.base_url}/evt/lst'
 
-    def start_continuous_read(self, interval: int | None = None) -> None:
-        if interval is not None:
-            self.interval = interval
-        if self.running:
-            self.log('⚠️ HTTP polling already running.')
-            return
-        self.running = True
-        self._start_loop()
-        asyncio.run_coroutine_threadsafe(self._poll_loop(), self.loop)
-
     def stop_continuous_read(self) -> None:
         if not self.running:
             self.log('⚠️ HTTP polling is not running.')

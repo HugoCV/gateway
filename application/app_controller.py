@@ -1,3 +1,5 @@
+import os, sys
+
 from application.managers.gateway_manager import GatewayManager
 from application.managers.device_manager import DeviceManager
 from application.services.device_service import DeviceService
@@ -102,7 +104,8 @@ class AppController:
             self.gateway_cfg,
             self.on_initial_load,
             log_callback=self.window._log,
-            command_callback=self.on_receive_command
+            command_callback=self.on_receive_command,
+            command_gateway_callback=self.on_receive_gateway_command
         )
 
         # Usar constantes globales
@@ -119,6 +122,16 @@ class AppController:
 
 
     # === commands ===
+    def on_receive_gateway_command(self, command):
+        print("on_receive_gateway_command", command)
+        
+        match command["action"]:
+            case "restart":
+                os.execv(sys.executable, [sys.executable] + sys.argv)
+            case "restart-gateway":
+                print("restart")
+
+    
     def on_receive_command(self, device_serial, command):
         if not self.devices:
             self.window._log(f"no hay dispositivos conectados commando recivido {command}")
@@ -126,6 +139,8 @@ class AppController:
                     self.window._log("⚠️ No device selected.")
                     return    
         match command["action"]:
+            case "update-connections":
+                    ds.update_connection_config(command["params"])
             case "update-status":
                 value = str(command.get("params", {}).get("value", "")).lower()
                 if value == "on":
@@ -137,8 +152,6 @@ class AppController:
                 elif value == "restart":
                     self.log(f"El dispositivo {ds.name} se mandó a reiniciar")
                     ds.restart()
-            case "update-connections":
-                ds.update_connection_config(command["params"])
             case "update-config":
                 print("update-config", command["params"]["value"], "device_serial", device_serial)
         

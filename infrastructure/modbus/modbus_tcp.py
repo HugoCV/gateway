@@ -99,18 +99,20 @@ class ModbusTcp:
         if getattr(self, "_reconnecting", False):
             return
         self._reconnecting = True
+        self._running = True
         self.disconnect()
-        print("iniciando conexion")
-        while True:
+
+        while self._running:
             if self.connect():
-                print("Conexión establecida a ModbusTcp")
+                print("✅ Conexión establecida a ModbusTcp")
                 self.device.update_connected()
                 self.start_reading()
-                self._reconnecting = False
-                return  # salimos: ya está conectado y polling en marcha
+                break
 
             print(f"❌ No se pudo conectar TCP, reintentando en {delay}s...")
             time.sleep(delay)
+
+        self._reconnecting = False
 
     def disconnect(self) -> None:
         """
@@ -190,9 +192,9 @@ class ModbusTcp:
             result1 = self.write_register(address=901, value=1)
             result2 = self.write_register(address=901, value=0)
             result3 = self.write_register(address=898, value=2)
-            
-            if not result1.isError() and not result2.isError() and not result3.isError():
-                self.log("✔ Comando enviado: RESET")
+            print(f"result {result1} {result2} {result3}")
+            if not result1 and not result2 and not result3:
+                print("✔ Comando enviado: RESET")
 
     def set_local(self) -> bool:
         is_local = self.write_register(address=DEVICE["mode"]["address"], value=DEVICE["mode"]["values"]["local"])
@@ -230,14 +232,6 @@ class ModbusTcp:
 
         return False
 
-    def start_continuous_read(self):
-        def read_loop():
-            while True:
-                if self.client:
-                    rr = self.client.read_holding_registers(address=19, count=9)
-                time.sleep(5)
-        threading.Thread(target=read_loop, daemon=True).start()
-
     def start_reading(self)-> None:
         if not self.is_connected():
             return
@@ -253,7 +247,7 @@ class ModbusTcp:
 ) -> threading.Thread:
         def _poll():
             failure_count = 0
-            while True:
+            while self._running:
                 regs_group = {}
 
                 for addr in addresses:
@@ -302,18 +296,15 @@ class ModbusTcp:
         return s
     
     def _read_callback(self, regs):
-        # Construir señal desde registros
         signal = self._build_signal_from_regs(regs, SIGNAL_MODBUS_TCP_DIR)
         if not signal:
             return  
-        # Filtrar valores None en payload
         payload = {k: v for k, v in signal.items() if v is not None}
         if not payload:
             return 
         self.send_signal(payload, "drive")
     
     def read_holding_registers(self, address: int, slave_id, count: int = 1) -> list[bool] | None:
-        # self.app._log(f"Leyendo el esclavo: {self.app.slave_id_var.get()}")
         """Reads `count` registers starting at `address`."""
         if not self.client:
             self.log("⚠️ Client not connected. Call connect() first.")
@@ -324,10 +315,41 @@ class ModbusTcp:
                 if rr and not rr.isError():
                     regs   = list(rr.registers)
                     status = getattr(rr, 'status', None)
-                    # self.log(f"▶Registro={address}, Respuesta={regs}, Estado={status}")
                     return regs
                 self.log(f"❌ Error reading registers: {rr}")
             except Exception as e:
                 self.log(f"❌ Exception reading registers: {e}")
         return None
+
+
+    def update_config(self, ip=None, port=None, slave_id=None):
+        """Update TCP parameters and reconnect if needed."""
+        changed = False
+        print("UPDATE CONFIG",ip, port, slave_id)
+        if ip and ip != self.ip:
+            self.ip = ip
+            changed = True
+
+        if port and port != self.port:
+            self.port = port
+            changed = True
+
+        if slave_id and slave_id != self.slave_id:
+            self.slave_id = slave_id
+            changed = True
+
+        if changed:
+            self.log(f"🔄 Updating TCP config: {self.ip}:{self.port}, slave={self.slave_id}")
+            # detener el loop de auto_reconnect actual
+            self.stop_reconnect()
+            # arrancar uno nuevo en segundo plano
+            threading.Thread(target=self.auto_reconnect, daemon=True).start()
+            return True
+
+        return False
+
+    def stop_reconnect(self):
+        """Detiene el loop de auto_reconnect si está corriendo."""
+        self._running = False
+        self.disconnect()
 
