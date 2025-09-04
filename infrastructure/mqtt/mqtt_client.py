@@ -65,7 +65,6 @@ class MqttClient:
 
     @staticmethod
     def _get(gw: Dict[str, Any], *keys: str) -> Optional[str]:
-        """Retrieve value from gateway config supporting both snake_case and camelCase."""
         for k in keys:
             val = gw.get(k)
             if val:
@@ -105,61 +104,41 @@ class MqttClient:
 
     # ---------- Connection ----------
     def connect(self) -> None:
-        """Create the client, configure TLS/LWT and start loop in background."""
+        """Configura el cliente, TLS/LWT y activa auto-reconnect en background."""
         broker = MQTT_HOST
         port = MQTT_PORT
         if not broker:
             self.log("MQTT_HOST not configured")
             return
-        if self._connect_thread and self._connect_thread.is_alive():
-            self.log("MQTT connection already in progress.")
-            return
 
-        self._stop_event.clear()
+        client_id = f"gateway_py_{self.gw_id or ObjectId()}"
+        self.client = mqtt.Client(client_id=client_id, protocol=mqtt.MQTTv5)
 
-        def _run() -> None:
-            client_id = f"gateway_py_{self._get(self.gateway,'gatewayId','gateway_id') or ObjectId()}"
-            self.client = mqtt.Client(client_id=client_id, protocol=mqtt.MQTTv5)
+        if MQTT_USER and MQTT_PASS:
+            self.client.username_pw_set(MQTT_USER, MQTT_PASS)
+            self.log("🔐 Credentials set")
 
-            if MQTT_USER and MQTT_PASS:
-                self.client.username_pw_set(MQTT_USER, MQTT_PASS)
-                self.log("Credentials set")
+        lwt_topic = f"tenant/{self.org_id}/gateway/{self.gw_id}/status"
+        self.client.will_set(lwt_topic, json.dumps({"status": "offline"}), qos=1, retain=False)
 
-            lwt_topic = f"tenant/{self.org_id}/gateway/{self.gw_id}/status"
-            self.client.will_set(lwt_topic, json.dumps({"status": "offline"}), qos=1, retain=False)
+        if port == 8883:
+            ca = certifi.where()
+            self.client.tls_set(ca_certs=ca, tls_version=ssl.PROTOCOL_TLS_CLIENT)
+            self.client.tls_insecure_set(False)
+            self.log("🔒 TLS configured")
 
-            if port == 8883:
-                try:
-                    ca = certifi.where()
-                    self.client.tls_set(ca_certs=ca, tls_version=ssl.PROTOCOL_TLS_CLIENT)
-                    self.client.tls_insecure_set(False)
-                    self.log("🔒 TLS configured")
-                except Exception as e:
-                    self.log(f"❌ TLS error: {e}")
-                    return
+        self.client.on_connect = self.on_connect
+        self.client.on_disconnect = self.on_disconnect
+        self.client.on_message = self.on_message
+        self.client.on_log = self.on_log
 
-            # Callbacks
-            self.client.on_connect = self.on_connect
-            self.client.on_disconnect = self.on_disconnect
-            self.client.on_message = self.on_message
-            self.client.on_log = self.on_log
+        self.client.reconnect_delay_set(min_delay=1, max_delay=30)
 
-            delay = 1.0
-            while not self._stop_event.is_set():
-                try:
-                    self.client.connect(broker, port, keepalive=30)
-                    if not self._loop_started:
-                        self.client.loop_start()
-                        self._loop_started = True
-                        self.log("⌛ MQTT loop started")
-                    break
-                except Exception as e:
-                    self.log(f"❌ Connection error: {e} — retrying in {delay:.0f}s")
-                    time.sleep(delay)
-                    delay = min(delay * 2, 30)
-
-        self._connect_thread = threading.Thread(target=_run, daemon=True)
-        self._connect_thread.start()
+        self.client.connect_async(broker, port, keepalive=30)
+        if not self._loop_started:
+            self.client.loop_start()
+            self._loop_started = True
+            self.log("⌛ MQTT loop started (auto-reconnect enabled)")
 
     def disconnect(self) -> None:
         """Disconnect the MQTT client and stop loop."""

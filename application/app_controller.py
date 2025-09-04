@@ -11,83 +11,8 @@ from infrastructure.mqtt.mqtt_client import MqttClient
 from infrastructure.config.loader import get_gateway
 
 # =========================
-# Constantes globales
+# Global
 # =========================
-
-MODBUS_LABELS = {
-    "freqRef": "Referencia de frecuencia",
-    "accTime": "Tiempo de aceleración",
-    "decTime": "Tiempo de desaceleración",
-    "curr":    "Amperaje de salida",
-    "freq":    "Frecuencia de salida",
-    "volt":    "Voltaje de salida",
-    "voltDcLink": "Voltaje DC Link",
-    "power":   "Potencia en kW",
-    "stat":    "Estado",
-    "dir":     "Dirección",
-    "speed":   "Velocidad (rpm)",
-    "alarm":   "Alarma",
-    "temp":    "Temperatura",
-    "fault":   "Falla",
-}
-
-LOGO_LABELS = {
-    "faultRec": "Voltage fault recovery time",
-    "faultRes": "Fault reset time",
-    "workHours": "Working hours",
-    "workMinutes": "Working minutes",
-    "faultLowWater": "Tank Low Water Level Fault",
-    "highPressureRes": "High-pressure reset delay",
-}
-
-# Escalas por clave (aplican si la clave existe y el valor no es None)
-MODBUS_SCALES = {
-    "curr": 0.1,      # /10
-    "power": 0.1,     # /10
-    "freqRef": 0.01,  # /100
-    "freq": 0.01,     # /100
-}
-
-SIGNAL_MODBUS_TCP_DIR = {
-    "freqRef": 5,
-    "accTime": 7,
-    "decTime": 8,
-    "curr": 9,
-    "freq": 10,
-    "volt": 11,
-    "voltDcLink": 12,
-    "power": 13,       # si no se puede saber, devuelves None si no existe
-    "fault": 15,
-    "stat": 17,        # 0=stop 1=falla 2=operacion
-    "dir": 19,         # ajusta si cambia
-    "speed": 786,
-    "alarm": 816,
-    "temp": 861,
-}
-
-SIGNAL_MODBUS_SERIAL_DIR = {
-    "freqRef": 4,
-    "accTime": 6,
-    "decTime": 7,
-    "curr": 8,
-    "freq": 9,
-    "volt": 10,
-    "power": 12,
-    "stat": 16,
-    "dir": 16,         # si cambia, actualiza aquí
-    "speed": 785,
-    "alarm": 815,
-    "temp": 860,
-}
-
-SIGNAL_LOGO_DIR = {
-    "faultRec": 2,
-    "faultRes": 4,
-    "workHours": 5,
-    "workMinutes": 6,
-    "faultLowWater": 8,
-    "highPressureRes": 11,
-}
 
 
 class AppController:
@@ -107,11 +32,6 @@ class AppController:
             command_callback=self.on_receive_command,
             command_gateway_callback=self.on_receive_gateway_command
         )
-
-        # Usar constantes globales
-        self.signal_modbus_tcp_dir = SIGNAL_MODBUS_TCP_DIR
-        self.signal_modbus_serial_dir = SIGNAL_MODBUS_SERIAL_DIR
-        self.signal_logo_dir = SIGNAL_LOGO_DIR
 
         # Conectar MQTT al final
         self.on_connect_mqtt()
