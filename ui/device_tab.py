@@ -57,26 +57,6 @@ def build_device_tab(app, parent):
 
     http_frame.columnconfigure(1, weight=1)
 
-    http_btn_frame = ttk.Frame(http_frame)
-    http_btn_frame.grid(row=3, column=0, columnspan=2, pady=(10, 5), sticky="we")
-    wrap = 3
-
-    for c in range(wrap):
-        http_btn_frame.columnconfigure(c, weight=1)
-
-    http_buttons = [
-        ("Conectar", app.controller.on_connect_http),
-        ("Leer Fallas", app.controller.on_http_read_fault),
-    ]
-    for idx, (text, cmd) in enumerate(http_buttons):
-        r = idx // wrap
-        c = idx % wrap
-        ttk.Button(
-            http_btn_frame,
-            text=text,
-            command=cmd
-        ).grid(row=r, column=c, padx=5, pady=5, sticky="we")
-
 
     # Modbus Serial Section
     modbus_serial_frame = ttk.LabelFrame(parent, text="Modbus Serial (RS-485)", padding=15)
@@ -94,28 +74,6 @@ def build_device_tab(app, parent):
         ttk.Entry(modbus_serial_frame, textvariable=var).grid(row=i, column=1, sticky="we", padx=5, pady=5)
 
     modbus_serial_frame.columnconfigure(1, weight=1)
-    serial_btn_frame = ttk.Frame(modbus_serial_frame)
-    serial_btn_frame.grid(row=3, column=0, columnspan=2, pady=(10, 5), sticky="we")
-    wrap = 3
-
-    for c in range(wrap):
-        serial_btn_frame.columnconfigure(c, weight=1)
-
-    modbus_buttons = [
-        ("Conectar", app.controller.on_connect_modbus_serial),
-        ("Encender",  app.controller.on_turn_on_modbus_serial),
-        ("Apagar",   app.controller.on_turn_off_modbus_serial),
-        ("Reiniciar",app.controller.on_restart_modbus_serial),
-        ("Leer", app.controller.on_multiple_modbus_serial),
-    ]
-    for idx, (text, cmd) in enumerate(modbus_buttons):
-        r = idx // wrap
-        c = idx % wrap
-        ttk.Button(
-            serial_btn_frame,
-            text=text,
-            command=cmd
-        ).grid(row=r, column=c, padx=5, pady=5, sticky="we")
 
     # Modbus TCP Section
     modbus_tcp_frame = ttk.LabelFrame(parent, text="Modbus TCP", padding=15)
@@ -129,29 +87,7 @@ def build_device_tab(app, parent):
     ttk.Entry(modbus_tcp_frame, textvariable=app.tcp_port_var).grid(row=1, column=1, sticky="we", padx=5, pady=5)
 
     modbus_tcp_frame.columnconfigure(1, weight=1)
-    tcp_btn_frame = ttk.Frame(modbus_tcp_frame)
-    tcp_btn_frame.grid(row=3, column=0, columnspan=2, pady=(10, 5), sticky="we")
-    wrap = 3
-
-    for c in range(wrap):
-        tcp_btn_frame.columnconfigure(c, weight=1)
-
-    tcp_buttons = [
-        ("Conectar", app.controller.on_connect_modbus_tcp),
-        ("Encender",  app.controller.on_turn_on_modbus_tcp),
-        ("Apagar",   app.controller.on_turn_off_modbus_tcp),
-        ("Reiniciar",app.controller.on_reset_modbus_tcp),
-        ("Leer", app.controller.on_read_modbus_tcp),
-    ]
-    for idx, (text, cmd) in enumerate(tcp_buttons):
-        r = idx // wrap
-        c = idx % wrap
-        ttk.Button(
-            tcp_btn_frame,
-            text=text,
-            command=cmd
-        ).grid(row=r, column=c, padx=5, pady=5, sticky="we")
-
+   
     # Logo Section
     logo_tcp_frame = ttk.LabelFrame(parent, text="Logo", padding=15)
     logo_tcp_frame.grid(row=2, column=0, sticky="nsew", padx=15, pady=10)
@@ -167,15 +103,5 @@ def build_device_tab(app, parent):
     ttk.Label(logo_tcp_frame, text="Logo Port:").grid(row=1, column=0, sticky="e", padx=5, pady=5)
     ttk.Entry(logo_tcp_frame, textvariable=app.logo_port_var).grid(row=1, column=1, sticky="we", padx=5, pady=5)
     logo_tcp_frame.columnconfigure(1, weight=1)
-
-    tcp_btn_frame = ttk.Frame(logo_tcp_frame)
-    tcp_btn_frame.grid(row=2, column=0, columnspan=2, pady=(10, 0))
-    for text, command in [
-        ("Conectar", app.controller.on_connect_logo),
-        ("Encender", app.controller.on_turn_on_logo),
-        ("Apagar", app.controller.on_turn_off_logo),
-        ("Leer", app.controller.on_read_logo),
-    ]:
-        ttk.Button(tcp_btn_frame, text=text, command=command).pack(side="left", padx=5)
 
         
