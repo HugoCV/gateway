@@ -26,6 +26,23 @@ MODBUS_SCALES = {
     "freq": 0.01,     # /100
 }
 
+SIGNAL_VACON_MODBUS_TCP_DIR ={
+   "freqRef": 183,
+    # "accTime": 7,
+    # "decTime": 8,
+    "curr": 2,
+    "freq": 0,
+    "volt": 5,
+    "voltDcLink": 6,
+    "power": 4,       # si no se puede saber, devuelves None si no existe
+    # "fault": 42,
+    "stat": 42,        # 66=stop 72=falla 4166=operacion 
+    # "dir": 6,         # ajusta si cambia
+    "speed": 1,
+    # "alarm": 816,
+    "temp": 7,
+}
+
 SIGNAL_MODBUS_TCP_DIR = {
     "freqRef": 5,
     "accTime": 7,
@@ -91,6 +108,7 @@ class ModbusTcp:
         self.poll_interval = 0.5
 
     def handle_disconnect(self):
+        print("handle disconnect TCP")
         self.disconnect()
         self.device.update_connected()
         threading.Thread(target=self.auto_reconnect, daemon=True).start()
@@ -124,9 +142,9 @@ class ModbusTcp:
                 self.client.close()
                 if hasattr(port_obj, 'close'):
                     port_obj.close()
-                self.log("Modbus TCP disconnected")
+                print("Modbus TCP disconnected")
             except Exception as e:
-                self.log(f"Error during disconnect: {e}")
+                print(f"Error during disconnect: {e}")
             finally:
                 self.client = None
 
@@ -235,7 +253,7 @@ class ModbusTcp:
     def start_reading(self)-> None:
         if not self.is_connected():
             return
-        addrs = list(dict.fromkeys(SIGNAL_MODBUS_TCP_DIR.values()))
+        addrs = list(dict.fromkeys(SIGNAL_VACON_MODBUS_TCP_DIR.values()))
         self.tcp_poll = self.poll_registers(
             addresses=addrs, interval=self.poll_interval
         )
@@ -267,6 +285,7 @@ class ModbusTcp:
                         self.log(f"❌ Exception polling register {addr}: {e}")
                         failure_count += 1
                 time.sleep(interval)
+                print(regs_group)
                 self._read_callback(regs_group)
                 
 
@@ -289,14 +308,14 @@ class ModbusTcp:
             else:
                 s[name] =  { "value":  v, "kind": "operation"} 
             if(name == "stat"):
-                s[name] = { "value": STATUS_TYPES_DIR.get(v, "Desconocido {v}"), "kind": "operation"} 
+                s[name] = { "value": STATUS_TYPES_DIR.get(v, f"Desconocido {v}"), "kind": "operation"} 
             if(name == "dir"):
-                s[name] = { "value": DIR_TYPE_DIR.get(v, "Desconocido {v}"), "kind": "operation"}
+                s[name] = { "value": DIR_TYPE_DIR.get(v, f"Desconocido {v}"), "kind": "operation"}
             
         return s
     
     def _read_callback(self, regs):
-        signal = self._build_signal_from_regs(regs, SIGNAL_MODBUS_TCP_DIR)
+        signal = self._build_signal_from_regs(regs, SIGNAL_VACON_MODBUS_TCP_DIR)
         if not signal:
             return  
         payload = {k: v for k, v in signal.items() if v is not None}
