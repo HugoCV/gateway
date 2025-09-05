@@ -297,16 +297,16 @@ class ModbusSerial:
         payload = {k: v for k, v in signal.items() if v is not None}
         if payload:
             self.send_signal(payload, "drive")
-    def update_config(self, ip=None, port=None, slave_id=None) -> bool:
+    def update_config(self, port=None, baudrate=None, slave_id=None) -> bool:
         """Update TCP parameters and reconnect if needed."""
         changed = False
 
-        if ip and ip != self.ip:
-            self.ip = ip
-            changed = True
-
         if port and port != self.port:
             self.port = port
+            changed = True
+
+        if baudrate and baudrate != self.baudrate:
+            self.baudrate = baudrate
             changed = True
 
         if slave_id and slave_id != self.slave_id:
@@ -314,7 +314,7 @@ class ModbusSerial:
             changed = True
 
         if changed:
-            self.log(f"🔄 Updating TCP config: {self.ip}:{self.port}, slave={self.slave_id}")
+            self.log(f"🔄 Updating TCP config: {self.baudrate}:{self.port}, slave={self.slave_id}")
             self.stop_reconnect()
             self.start()
             return True

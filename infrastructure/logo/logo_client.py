@@ -23,6 +23,7 @@ SIGNAL_LOGO_DIR = {
     "highPressureCount": 11,
 }
 
+
 class LogoModbusClient:
     def __init__(self, device, log, send_signal, host, port):
         self.host = host
@@ -208,10 +209,57 @@ class LogoModbusClient:
     # ---------------------------
     def _build_signal_from_regs(self, regs: dict[int, int]) -> dict:
         signal = {}
+
         for name, addr in SIGNAL_LOGO_DIR.items():
-            v = regs.get(addr)
-            if v is not None:
-                signal[name] = {"value": v, "kind": "operation"}
+            value = regs.get(addr)
+            if value is None:
+                continue
+
+            if name == "status":
+                status_map = {
+                    9: {"value": "Falla de voltaje", "kind":"fault"},
+                    8: {"value": "Reiniciando", "kind":"operation"},
+                    0: {"value":"Panel desenergizado", "kind": "operation"},
+                    512: {"value":"Logo reiniciando", "kind": "operation"},
+                    163: {"value": "Operando", "kind": "operation"},
+                    97: {"value": "Alta presión (conteo)", "kind": "operation"},
+                    32: {"value": "Falla: bajo nivel", "kind": "fault"},
+                    35: {"value": "Apagado por selector", "kind": "operation"},
+                    33: {"value": "Selector Fuera", "kind": "operation"},
+                    521:  {"value": "Falla de voltaje", "kind": "fault"},
+                    520:  {"value": "Reiniciando", "kind": "operation"},
+                    608: {"value": "Falla bajo nivel", "kind": "fault"},
+                    577: {"value": "Falla de voltaje", "kind": "fault"},
+                    513: {"value": "Falla de voltaje", "kind": "fault"},
+                    544: {"value": "Falla de bajo nivel", "kind": "fault"},
+                    546: {"value": "Falla de bajo nivel", "kind": "fault"},
+                    4707: {"value": "Desaceleracion", "kind": "operation"},
+                    545: {"value": "Reposo", "kind": "operation"},
+                    547: {"value": "Desaceleracion", "kind": "operation"},
+                    609: {"value": "Paro por alta precion", "kind": "operation"},
+                    673: {"value": "Encendido por selector", "kind": "operation"},
+                    737: {"value": "Aceleracion", "kind": "operation"},
+                    611: {"value": "Desaceleracion", "kind": "operation"},
+                    1569: {"value": "Falla de confirma", "kind": "fault"},
+                    4705: {"value": "En Transito", "kind": "operation"},
+                    739: {"value": "Operacion", "kind": "operation"},
+                    1633: {"value": "Falla de confirma", "kind": "fault"},
+                    34: {"value": "Falla: bajo nivel", "kind": "fault"},
+                    1: {"value": "Falla de voltaje", "kind": "fault"},
+                    3: {"value": "Falla de voltaje", "kind": "fault"},
+                    41: {"value": "Falla térmica/variador", "kind": "fault"},
+                    675: {"value": "Operacion", "kind": "operation"},
+                    161: {"value": "Arranque fallido (LOGO envía señal, contactor/variador no encienden)", "kind": "fault"},
+                }
+
+                signal[name] = status_map.get(
+                    value,
+                    {"value": f"Desconocido ({value})", "kind": "operation"}
+                )
+
+            else:
+                # Para otros registros dejamos el valor numérico
+                signal[name] = { "value":value, "kind": "operation"}
         return signal
 
     def _read_callback(self, regs):
@@ -220,4 +268,5 @@ class LogoModbusClient:
             return
         payload = {k: v for k, v in signal.items() if v is not None}
         if payload:
+            print(payload)
             self.send_signal(payload, "logo")
