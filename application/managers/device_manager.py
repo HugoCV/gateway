@@ -13,6 +13,7 @@ class DeviceManager:
         def _cb(c,u,m):
             try:
                 data = json.loads(m.payload.decode("utf-8"))
+                print("load devices", data)
                 self.set_devices(data["devices"])
             except Exception:
                 data = None
@@ -34,12 +35,6 @@ class DeviceManager:
             self.window._log(f"Historial recibido: {fault_history}")
         else:
             self.window._log("No se pudo obtener el historial.")
-
-    def save_devices(self):
-        """
-        Save all devices to the JSON file.
-        """
-        self.log("💾 Devices saved.")
 
     def get_device_by_serial(self, serial):
         """

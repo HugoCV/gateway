@@ -164,10 +164,10 @@ class MqttClient:
             return
 
         client.subscribe(self.deviceCommandTopic, qos=1)
-        self.log(f"📡 Subscribed to commands: {self.deviceCommandTopic}")
+        self.log(f"Subscribed to commands: {self.deviceCommandTopic}")
 
         client.subscribe(self.gatewayCommandTopic, qos=1)
-        self.log(f"📡 Subscribed to commands: {self.gatewayCommandTopic}")
+        self.log(f"Subscribed to commands: {self.gatewayCommandTopic}")
         # Publish online status
         online_topic = f"tenant/{self.org_id}/gateway/{self.gw_id}/status"
         self._publish(online_topic, json.dumps({"status": "online"}), qos=1)
@@ -180,6 +180,7 @@ class MqttClient:
         self._publish(device_connection_topic, json.dumps({"status": status, "logoStatus": logo_status}), qos=1)
 
     def on_disconnect(self, client: mqtt.Client, userdata, flags, reason_code, properties=None) -> None:
+        print("on_disconnect mqtt")
         self.log(f"⚠️ Disconnected (rc={reason_code})")
         self._connected_evt.clear()
 
@@ -200,7 +201,6 @@ class MqttClient:
                 payload = json.loads(msg.payload.decode("utf-8"))
             except Exception:
                 payload = msg.payload  # raw if not JSON
-            print("")
             self.command_callback(device_id, payload)
             self.log(f"[MQTT-CMD] device={device_id} payload={payload}")
             return

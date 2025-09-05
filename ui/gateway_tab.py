@@ -52,8 +52,4 @@ def build_gateway_tab(app, parent):
         ttk.Label(gw_frame, text=label + ":").grid(row=i, column=0, sticky="e", padx=5, pady=5)
         ttk.Entry(gw_frame, textvariable=var).grid(row=i, column=1, sticky="we", padx=5, pady=5)
 
-    # ttk.Button(gw_frame, text="Cargar datos", command=app.controller.on_initial_load).grid(
-    #     row=len(fields), column=0, columnspan=2, pady=10
-    # )
-
     gw_frame.columnconfigure(1, weight=1)

@@ -20,7 +20,7 @@ print(f"⚙️  Frecuencia de referencia configurada a {freq_ref_hz:.2f} Hz")
 
 # --- Encender variador (escribir 1 en registro 0) ---
 client.write_register(address=0, value=1)
-print("▶️ Comando RUN enviado")
+print("Comando RUN enviado")
 
 # --- Leer señales mientras está RUN ---
 for i in range(5):
@@ -37,7 +37,7 @@ for i in range(5):
 
 # --- Apagar variador (escribir 0 en registro 0) ---
 client.write_register(address=0, value=0)
-print("⏹️ Comando STOP enviado")
+print("Comando STOP enviado")
 
 # --- Leer señales mientras está STOP ---
 for i in range(5):

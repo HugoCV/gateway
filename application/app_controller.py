@@ -1,5 +1,5 @@
-import os, sys
-
+import os, sys, time
+import threading
 from application.managers.gateway_manager import GatewayManager
 from application.managers.device_manager import DeviceManager
 from application.services.device_service import DeviceService
@@ -40,7 +40,23 @@ class AppController:
         self.gateway_manager = GatewayManager(self.mqtt_handler, self._refresh_gateway_fields, self.window._log)
         self.devices = {}
 
+        self.monitor_threads()
 
+
+
+
+    def monitor_threads(self, interval: float = 2.0):
+        """Start a background thread that logs active thread count periodically."""
+    
+        def _worker():
+            while True:
+                threads = threading.enumerate()
+                print("threads", len(threads))
+                time.sleep(interval)
+
+        t = threading.Thread(target=_worker, daemon=True)
+        t.start()
+        return t
     # === commands ===
     def on_receive_gateway_command(self, command):
         print("on_receive_gateway_command", command)
@@ -110,6 +126,9 @@ class AppController:
             self.update_device_fields({})
 
     def create_all_devices(self, devices):
+        for ds in getattr(self, "devices", {}).values():
+            ds.stop()
+
         device_services = {}
         for dev in devices:
             ds = DeviceService(

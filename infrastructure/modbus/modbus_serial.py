@@ -156,7 +156,7 @@ class ModbusSerial:
             return connected
 
         except OSError as e:
-            print(e)
+            print("error",e)
             if e.errno == errno.ENOENT:
                 self.log(f"Device {self.port} not found.")
             elif e.errno == errno.EACCES:
@@ -166,12 +166,12 @@ class ModbusSerial:
             return False
 
         except ModbusException as e:
-            print(e)
+            print("error",e)
             self.log(f"❌ Modbus exception: {e}")
             return False
 
         except Exception as e:
-            print(e)
+            print("error",e)
             self.log(f"❌ Unexpected error on {self.port}: {e}")
             return False
 
@@ -179,13 +179,14 @@ class ModbusSerial:
         """
         Closes the Modbus and serial connection.
         """
+        # self._running = False
+        print("disconnect")
+        if hasattr(self, "_thread") and self._thread.is_alive():
+            self._thread.join(timeout=1)
+        print("se detuvo el hilo")
         if self.client:
             try:
-                port_obj = self.client.port if hasattr(self.client, 'port') else None
                 self.client.close()
-                # Close underlying serial if present
-                if hasattr(port_obj, 'close'):
-                    port_obj.close()
                 self.log("⚠️ Modbus RTU disconnected")
             except Exception as e:
                 self.log(f"❌ Error during disconnect: {e}")
@@ -211,7 +212,7 @@ class ModbusSerial:
         if changed:
             self.log(f"🔄 Updating config: {self.port}@{self.baudrate}, slave={self.slave_id}")
             self.stop_reconnect()
-            threading.Thread(target=self.auto_reconnect, daemon=True).start()
+            self._thread = threading.Thread(target=self.auto_reconnect, daemon=True).start()
             return True
         return False
 
@@ -219,7 +220,7 @@ class ModbusSerial:
         print("handle_disconnect")
         self.disconnect()
         self.device.update_connected()
-        threading.Thread(target=self.auto_reconnect, daemon=True).start()
+        self._thread = threading.Thread(target=self.auto_reconnect, daemon=True).start()
 
     def auto_reconnect(self, delay: float = 5.0):
         if getattr(self, "_reconnecting", False):
@@ -245,8 +246,9 @@ class ModbusSerial:
 
 
     def stop_reconnect(self):
-        """Detiene el loop de auto_reconnect si está corriendo."""
         self._running = False
+        if hasattr(self, "_thread") and self._thread.is_alive():
+            self._thread.join(timeout=1)
         self.disconnect()
 
     def poll_registers(self, addresses: list[int], interval: float = 0.5) -> threading.Thread:

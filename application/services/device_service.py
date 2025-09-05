@@ -73,6 +73,42 @@ class DeviceService:
         self.connected_logo = False
         self.start_connections()
 
+    def __del__(self):
+        """Ensure cleanup on instance deletion."""
+        print("se llama a stop")
+        self.stop()
+
+    def stop(self) -> None:
+        """Stop all per-device connections and threads."""
+        print(f"⏹️ Stopping DeviceService for {self.device_id}")
+        # self._tcp_event.set()
+
+        # Cada handler debe tener un método stop()
+        try:
+            if self.http: 
+                self.http.disconnect()
+        except Exception: 
+            pass
+
+        try:
+            if self.modbus_tcp: 
+                self.modbus_tcp.disconnect()
+        except Exception: 
+            pass
+
+        try:
+            if self.modbus_serial: 
+                print("modbus_serial disconnect")
+                self.modbus_serial.disconnect()
+        except Exception: 
+            pass
+
+        try:
+            if self.logo: 
+                self.logo.disconnect()
+        except Exception: 
+            pass
+
     # ---------------------------
     # Lifecycle
     # ---------------------------
@@ -110,7 +146,7 @@ class DeviceService:
                 logo_status = "online" if self.connected_logo else "offline"
                 self.mqtt.on_change_device_connection(self.serial, status, logo_status)
             except Exception as e:
-                print(e)
+                print("error",e)
         
 
     def start_connections(self):
@@ -122,7 +158,7 @@ class DeviceService:
             case "serial":
                 self.disconnect_modbus_serial()
                 self.connect_modbus_serial()
-                self.start_reading_modbus_serial()
+
             case "http":
                 self.disconnect_http()
                 self.connect_http()
@@ -130,13 +166,8 @@ class DeviceService:
             case "tcp":
                 self.disconnect_modbus_tcp()
                 self.connect_modbus_tcp()
-                self.start_reading_modbus_tcp()
         print("connectando dispositivo", self.name)
         self.update_connected()
-
-    def stop(self) -> None:
-        """Best-effort to stop device connections."""
-        self.log(f"⏹️ Stopping DeviceService for {self.device_id}")
 
     def turn_on(self):
         changed = False
@@ -221,7 +252,7 @@ class DeviceService:
             except Exception:
                 pass
     def connect_modbus_tcp(self) -> None:
-        threading.Thread(target=self.modbus_tcp.auto_reconnect, daemon=True).start()
+        self._tcp_event=threading.Thread(target=self.modbus_tcp.auto_reconnect, daemon=True).start()
                 
     def turn_on_modbus_tcp(self):
         self.modbus_tcp.turn_on()
@@ -238,14 +269,11 @@ class DeviceService:
         threading.Thread(target=self.modbus_serial.auto_reconnect, daemon=True).start()
     
     def disconnect_modbus_serial(self) -> None:
-        if self.modbus_serial and hasattr(self.modbus_serial, "stop"):
+        if self.modbus_serial and hasattr(self.modbus_serial, "disconnect"):
             try:
-                self.modbus_serial.stop()
+                self.modbus_serial.disconnect()
             except Exception:
                 pass
-
-    def start_reading_modbus_serial(self):
-        self.modbus_serial.start_reading()
 
     def turn_on_modbus_serial(self):
         self.modbus_serial.turn_on()
@@ -268,9 +296,9 @@ class DeviceService:
             self.logo.start_reading()
 
     def disconnect_logo(self) -> None:
-        if self.logo and hasattr(self.logo, "stop"):
+        if self.logo and hasattr(self.logo, "disconnect"):
             try:
-                self.logo.stop()
+                self.logo.disconnect()
             except Exception:
                 pass
 
