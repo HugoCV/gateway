@@ -268,5 +268,4 @@ class LogoModbusClient:
             return
         payload = {k: v for k, v in signal.items() if v is not None}
         if payload:
-            print(payload)
             self.send_signal(payload, "logo")

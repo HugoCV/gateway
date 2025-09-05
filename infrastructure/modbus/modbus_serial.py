@@ -25,7 +25,7 @@ SIGNAL_MODBUS_SERIAL_DIR = {
     "dir": 5,       
     "speed": 785,
     "alarm": 815,
-    "temp": 860,
+    "temp": 859,
 }
 
 DEVICE = {
@@ -39,8 +39,8 @@ DEVICE = {
     }
 }
 
-STATUS_TYPES_DIR = {0: "stop", 1: "fault", 2: "run"}
-DIR_TYPE_DIR = {4: "reverse", 1: "stop", 129: "auto", 130: "fwd", 193: "acc", 194: "fwd"}
+STATUS_TYPES_DIR = {0: "stop", 1: "fault", 2: "run", 7:"run"}
+DIR_TYPE_DIR = {4: "reverse", 1: "stop", 129: "auto", 130: "fwd", 193: "acc", 194: "fwd", 66:"fwd"}
 
 
 class ModbusSerial:

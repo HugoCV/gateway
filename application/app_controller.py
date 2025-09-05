@@ -35,24 +35,7 @@ class AppController:
         self.device_manager = DeviceManager(self.mqtt_handler, self.refresh_device_list, self.window._log)
         self.gateway_manager = GatewayManager(self.mqtt_handler, self._refresh_gateway_fields, self.window._log)
         self.devices = {}
-
-        self.monitor_threads()
-
-
-
-
-    def monitor_threads(self, interval: float = 2.0):
-        """Start a background thread that logs active thread count periodically."""
-    
-        def _worker():
-            while True:
-                threads = threading.enumerate()
-                print("threads", len(threads))
-                time.sleep(interval)
-
-        t = threading.Thread(target=_worker, daemon=True)
-        t.start()
-        return t
+        
     # === commands ===
     def on_receive_gateway_command(self, command):
         print("on_receive_gateway_command", command)
