@@ -254,7 +254,7 @@ class ModbusSerial:
         return self.write_register(DEVICE["status"]["address"], DEVICE["status"]["values"]["off"])
 
     def reset(self) -> bool:
-        self.log("🔄 Resetting Modbus RTU connection...")
+        self.log("Resetting Modbus RTU connection...")
         self.disconnect()
         time.sleep(0.5)
         return self.connect(timeout=1.0)
@@ -297,3 +297,26 @@ class ModbusSerial:
         payload = {k: v for k, v in signal.items() if v is not None}
         if payload:
             self.send_signal(payload, "drive")
+    def update_config(self, ip=None, port=None, slave_id=None) -> bool:
+        """Update TCP parameters and reconnect if needed."""
+        changed = False
+
+        if ip and ip != self.ip:
+            self.ip = ip
+            changed = True
+
+        if port and port != self.port:
+            self.port = port
+            changed = True
+
+        if slave_id and slave_id != self.slave_id:
+            self.slave_id = slave_id
+            changed = True
+
+        if changed:
+            self.log(f"🔄 Updating TCP config: {self.ip}:{self.port}, slave={self.slave_id}")
+            self.stop_reconnect()
+            self.start()
+            return True
+
+        return False
