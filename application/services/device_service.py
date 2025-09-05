@@ -64,14 +64,14 @@ class DeviceService:
         # self.modbus_serial: Optional[ModbusSerial] = None
         # self.logo: Optional[LogoModbusClient] = None
 
-        base_url = f"http://{self.cc['host']}:{self.cc['httpPort']}/api/dashboard"
+        self.base_url = f"http://{self.cc['host']}:{self.cc['httpPort']}/api/dashboard"
         self.http = HttpClient(self, self._send_signal, self.log)
         self.modbus_serial = ModbusSerial(self, self._send_signal, self.log, self.cc["serialPort"], self.cc["baudrate"], self.cc["slaveId"])
         self.modbus_tcp = ModbusTcp(self, self._send_signal, self.log, self.cc["host"], self.cc["tcpPort"], self.cc["slaveId"])
         self.logo = LogoModbusClient(self, self.log, self._send_signal, self.cc.get("logoIp"), self.cc.get("logoPort"))
         self.connected: bool = False
         self.connected_logo = False
-        self.start_connections()
+        self.start()
 
     def __del__(self):
         """Ensure cleanup on instance deletion."""
@@ -99,7 +99,7 @@ class DeviceService:
         try:
             if self.modbus_serial: 
                 print("modbus_serial disconnect")
-                self.modbus_serial.disconnect()
+                self.modbus_serial.stop()
         except Exception: 
             pass
 
@@ -108,25 +108,6 @@ class DeviceService:
                 self.logo.disconnect()
         except Exception: 
             pass
-
-    # ---------------------------
-    # Lifecycle
-    # ---------------------------
-    def start(self) -> None:
-        """Create per-device connections according to its connectionConfig."""
-        if not self.device_id:
-            self.log("⚠️ DeviceService: device without identifier.")
-            return
-
-        org_id, gw_id = self._ids()
-        if not org_id or not gw_id:
-            self.log("⚠️ DeviceService: missing organizationId/gatewayId.")
-            return
-
-        self.log(f"▶️ Starting DeviceService for {self.device_id}")
-
-        if not any([self.http, self.modbus_tcp, self.modbus_serial, self.logo]):
-            self.log(f"⚠️ {self.device_id} has no configured endpoints (HTTP/TCP/Serial/LOGO).")
 
     def update_connected(self):
         self.prev_connected = self.connected
@@ -149,16 +130,14 @@ class DeviceService:
                 print("error",e)
         
 
-    def start_connections(self):
+    def start(self):
         self.disconnect_logo()
         self.connect_logo()
         self.start_reading_logo()
 
         match self.cc.get("defaultReader"):
             case "serial":
-                self.disconnect_modbus_serial()
-                self.connect_modbus_serial()
-
+                self.modbus_serial.start()
             case "http":
                 self.disconnect_http()
                 self.connect_http()
@@ -225,8 +204,8 @@ class DeviceService:
     def connect_http(self) -> None:
         if self.cc.get("host") and self.cc.get("httpPort"):
             try:
-                self.http.connect(base_url=base_url, interval=self.http_interval)
-                self.log(f"🌐 HTTP connected: {base_url} ({self.device_id})")
+                self.http.connect(base_url=self.base_url, interval=self.http_interval)
+                self.log(f"🌐 HTTP connected: {self.base_url} ({self.device_id})")
             except Exception as e:
                 self.log(f"⚠️ HTTP error ({self.device_id}): {e}")
 

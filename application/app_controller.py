@@ -3,10 +3,6 @@ import threading
 from application.managers.gateway_manager import GatewayManager
 from application.managers.device_manager import DeviceManager
 from application.services.device_service import DeviceService
-from infrastructure.http.http_client import HttpClient
-from infrastructure.logo.logo_client import LogoModbusClient
-from infrastructure.modbus.modbus_serial import ModbusSerial
-from infrastructure.modbus.modbus_tcp import ModbusTcp
 from infrastructure.mqtt.mqtt_client import MqttClient
 from infrastructure.config.loader import get_gateway
 
