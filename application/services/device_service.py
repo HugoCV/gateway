@@ -220,10 +220,6 @@ class DeviceService:
     #         except Exception:
     #             pass
 
-    # TCP
-    def start_reading_modbus_tcp(self)-> None:
-        self.modbus_tcp.start_reading()
-
     # ---------------------------
     # Hot config update (reuses helpers)
     # ---------------------------

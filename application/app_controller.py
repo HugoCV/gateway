@@ -76,10 +76,10 @@ class AppController:
         self.device_manager.load_devices()
 
     # === Gateway ===
+    # NOTE: This method is currently unused as the UI fields have been removed.
     def _refresh_gateway_fields(self, gateway):
-        self.window.gw_name_var.set(gateway.get("name", ""))
-        self.window.loc_var.set(gateway.get("location", ""))
-
+        print("refresh_gateway_fields", gateway)
+    
     # === MQTT ===
     def on_connect_mqtt(self):
         self.mqtt_handler.connect()
@@ -94,15 +94,8 @@ class AppController:
 
         self.devices = self.create_all_devices(devices)
         self.services = list(self.devices.values())
-        names = [svc.device["name"] for svc in self.services]
-        self.window.device_combo["values"] = names
-        if names:
-            self.window.device_combo.current(0)
-            self.selected_serial = self.services[0].serial
-            self.update_device_fields(self.services[0])
-        else:
-            self.window.device_combo.set("")
-            self.update_device_fields({})
+        if self.window:
+            self.window.update_device_list(self.services)
 
     def create_all_devices(self, devices):
         for ds in getattr(self, "devices", {}).values():
@@ -115,64 +108,65 @@ class AppController:
                 gateway_cfg=self.gateway_cfg,
                 device=dev,
                 log=self.window._log,
-                update_fields=self.update_device_fields
+                update_fields=None # self.update_device_fields -> No longer used
             )
 
             device_services[ds.serial] = ds
         return device_services
 
-    def on_select_device(self, event=None):
-        selected = self.window.selected_device_var.get()
-        deviceDir = self.get_device_by_name(selected)
-        device = self.devices.get(deviceDir["serialNumber"])
-        self.selected_serial = device.serial
-        if not device:
-            self.window._log("Dispositivo no encontrado.")
-            return
-        self.update_device_fields(device)
+    # NOTE: These methods are currently unused as the UI fields have been removed.
+    # def on_select_device(self, event=None):
+    #     selected = self.window.selected_device_var.get()
+    #     deviceDir = self.get_device_by_name(selected)
+    #     device = self.devices.get(deviceDir["serialNumber"])
+    #     self.selected_serial = device.serial
+    #     if not device:
+    #         self.window._log("Dispositivo no encontrado.")
+    #         return
+    #     self.update_device_fields(device)
 
-    def update_device_fields(self, device_service) -> None:
-        
-        if(self.selected_serial != device_service.serial):
-            return 
-            
-        is_service_like = hasattr(device_service, "cc") or hasattr(device_service, "device")
+    # def update_device_fields(self, device_service) -> None:
+    #     
+    #     if(self.selected_serial != device_service.serial):
+    #         return 
+    #         
+    #     is_service_like = hasattr(device_service, "cc") or hasattr(device_service, "device")
 
-        if is_service_like:
-            svc = device_service
-            d = getattr(svc, "device", {}) or {}
-            cc = getattr(svc, "cc", {}) or {}
+    #     if is_service_like:
+    #         svc = device_service
+    #         d = getattr(svc, "device", {}) or {}
+    #         cc = getattr(svc, "cc", {}) or {}
 
-            name   = d.get("name") or getattr(svc, "device_id", "")
-            model  = getattr(svc, "model", "") or d.get("deviceModel", "")
-            serial = getattr(svc, "serial", "") or d.get("serialNumber", "")
-        else:
-            
-            d = device_service or {}
-            cc = d.get("connectionConfig") or {}
+    #         name   = d.get("name") or getattr(svc, "device_id", "")
+    #         model  = getattr(svc, "model", "") or d.get("deviceModel", "")
+    #         serial = getattr(svc, "serial", "") or d.get("serialNumber", "")
+    #     else:
+    #         
+    #         d = device_service or {}
+    #         cc = d.get("connectionConfig") or {}
 
-            name   = d.get("name", "")
-            model  = d.get("deviceModel", "")
-            serial = d.get("serialNumber", "")
-        self.selected_serial = serial
+    #         name   = d.get("name", "")
+    #         model  = d.get("deviceModel", "")
+    #         serial = d.get("serialNumber", "")
+    #     self.selected_serial = serial
 
-        def set_str(var, value):
-            var.set("" if value is None else str(value))
+    #     def set_str(var, value):
+    #         var.set("" if value is None else str(value))
 
-        # Top-level device fields
-        set_str(self.window.device_name_var, name)
-        set_str(self.window.serial_var,      serial)
-        set_str(self.window.model_var,       model)
+    #     # Top-level device fields
+    #     set_str(self.window.device_name_var, name)
+    #     set_str(self.window.serial_var,      serial)
+    #     set_str(self.window.model_var,       model)
 
-        # Connection config fields (HTTP / TCP share 'host' unless you split them)
-        set_str(self.window.http_ip_var,     cc.get("host", ""))
-        set_str(self.window.http_port_var,   cc.get("httpPort", ""))
-        set_str(self.window.tcp_ip_var,      cc.get("host", ""))
-        set_str(self.window.tcp_port_var,    cc.get("tcpPort", ""))
+    #     # Connection config fields (HTTP / TCP share 'host' unless you split them)
+    #     set_str(self.window.http_ip_var,     cc.get("host", ""))
+    #     set_str(self.window.http_port_var,   cc.get("httpPort", ""))
+    #     set_str(self.window.tcp_ip_var,      cc.get("host", ""))
+    #     set_str(self.window.tcp_port_var,    cc.get("tcpPort", ""))
 
-        # Serial / LOGO fields
-        set_str(self.window.serial_port_var, cc.get("serialPort", ""))
-        set_str(self.window.baudrate_var,    cc.get("baudrate", ""))
-        set_str(self.window.slave_id_var,    cc.get("slaveId", ""))
-        set_str(self.window.logo_ip_var,     cc.get("logoIp", ""))
-        set_str(self.window.logo_port_var,   cc.get("logoPort", ""))
+    #     # Serial / LOGO fields
+    #     set_str(self.window.serial_port_var, cc.get("serialPort", ""))
+    #     set_str(self.window.baudrate_var,    cc.get("baudrate", ""))
+    #     set_str(self.window.slave_id_var,    cc.get("slaveId", ""))
+    #     set_str(self.window.logo_ip_var,     cc.get("logoIp", ""))
+    #     set_str(self.window.logo_port_var,   cc.get("logoPort", ""))
