@@ -220,10 +220,6 @@ class DeviceService:
     #         except Exception:
     #             pass
 
-    # def start_reading_http(self):
-    #     if(self.http):
-    #         self.http.start_continuous_read()
-
     # TCP
     def start_reading_modbus_tcp(self)-> None:
         self.modbus_tcp.start_reading()

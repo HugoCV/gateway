@@ -3,15 +3,6 @@ import threading
 import time
 from pymodbus.client import ModbusTcpClient
 
-LOGO_LABELS = {
-    "faultRec": "Voltage fault recovery time",
-    "faultRes": "Fault reset time",
-    "workHours": "Working hours",
-    "workMinutes": "Working minutes",
-    "faultLowWater": "Tank Low Water Level Fault",
-    "highPressureRes": "High-pressure reset delay",
-}
-
 SIGNAL_LOGO_DIR = {
     "status": 0,
     "restartTime": 1,

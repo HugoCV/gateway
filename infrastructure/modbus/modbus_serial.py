@@ -253,12 +253,6 @@ class ModbusSerial:
     def turn_off(self) -> bool:
         return self.write_register(DEVICE["status"]["address"], DEVICE["status"]["values"]["off"])
 
-    def reset(self) -> bool:
-        self.log("Resetting Modbus RTU connection...")
-        self.disconnect()
-        time.sleep(0.5)
-        return self.connect(timeout=1.0)
-
     def _build_signal_from_regs(self, regs: dict[int, int], modbus_dir) -> dict:
         s = {}
         for name, addr in modbus_dir.items():
