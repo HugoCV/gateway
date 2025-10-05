@@ -228,25 +228,6 @@ class DeviceService:
     def start_reading_modbus_tcp(self)-> None:
         self.modbus_tcp.start_reading()
 
-    def disconnect_modbus_tcp(self) -> None:
-        if self.modbus_tcp and hasattr(self.modbus_tcp, "stop"):
-            try:
-                self.modbus_tcp.stop()
-            except Exception:
-                pass
-    def connect_modbus_tcp(self) -> None:
-        self._tcp_event=threading.Thread(target=self.modbus_tcp.auto_reconnect, daemon=True).start()
-
-    # Logo
-    def connect_logo(self) -> None:
-        if self.cc.get("logoIp") and self.cc.get("logoPort"):
-            try:
-                threading.Thread(target=self.logo.auto_reconnect, daemon=True).start()
-                self.log(f"🧱 LOGO connected: {self.cc['logoIp']}:{self.cc['logoPort']} ({self.device_id})")
-            except Exception as e:
-                self.log(f"⚠️ LOGO error ({self.device_id}): {e}")
-
-
     # ---------------------------
     # Hot config update (reuses helpers)
     # ---------------------------

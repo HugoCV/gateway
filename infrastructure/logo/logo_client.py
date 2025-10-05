@@ -21,6 +21,8 @@ SIGNAL_LOGO_DIR = {
     "workMinutes": 6,
     "lowLevelResetTime": 8,
     "highPressureCount": 11,
+    "networkPressure": 16,
+    "dischargePressure": 17,
 }
 
 
@@ -198,7 +200,7 @@ class LogoModbusClient:
 
         if changed:
             self.log(f"🔄 Updating LOGO! config: {self.host}:{self.port}")
-            self.stop_reconnect()
+            self.auto_reconnect()
             self.start()
             return True
 
