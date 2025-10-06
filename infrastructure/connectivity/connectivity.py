@@ -6,10 +6,8 @@ import threading
 from typing import Callable, Dict
 
 class ConnectivityMonitor:
-    """
-    Monitorea la conexión a Internet y toma acciones para restablecerla si se pierde.
-    Ejecuta las verificaciones en un hilo separado.
-    """
+    """Monitors the internet connection and takes action to restore it if lost.
+    Runs checks in a separate thread."""
     def __init__(
         self,
         log_callback: Callable[[str], None],
@@ -34,7 +32,7 @@ class ConnectivityMonitor:
 
 
     def start(self):
-        """Inicia el hilo de monitoreo."""
+        """Starts the monitoring thread."""
         if self._thread and self._thread.is_alive():
             self.log("⚠️ ConnectivityMonitor ya está corriendo.")
             return
@@ -45,34 +43,33 @@ class ConnectivityMonitor:
         self._thread.start()
 
     def stop(self):
-        """Detiene el hilo de monitoreo."""
+        """Stops the monitoring thread."""
         self.log("⏹️ Deteniendo monitor de conectividad.")
         self._stop_event.set()
         if self._thread:
             self._thread.join(timeout=2)
 
     def _is_connected(self) -> bool:
-        """Verifica si hay conexión a Internet."""
+        """Checks if there is an internet connection."""
         try:
-            # Conectar al DNS de Google como prueba
+            # Connect to Google's DNS as a test
             socket.create_connection(("8.8.8.8", 53), timeout=3)
             return True
         except OSError:
             return False
 
     def _get_current_ssid(self) -> str:
-        """Obtiene el SSID de la red Wi-Fi actual."""
+        """Gets the SSID of the current Wi-Fi network."""
         try:
-            # Usamos iwgetid para obtener el SSID de la interfaz
+            # We use iwgetid to get the SSID of the interface
             result = subprocess.run(["iwgetid", "-r", self.wifi_interface], capture_output=True, text=True, check=True)
             ssid = result.stdout.strip()
             return ssid if ssid else "Desconocida"
         except (subprocess.CalledProcessError, FileNotFoundError):
-            # Si el comando falla o no se encuentra, no estamos conectados a una red Wi-Fi
+            # If the command fails or is not found, we are not connected to a Wi-Fi network
             return "Ninguna"
 
     def _unblock_wifi_rfkill(self):
-        """Desbloquea el Wi-Fi si está bloqueado por software."""
         try:
             rfkill_output = subprocess.run(["rfkill", "list", "all"], capture_output=True, text=True)
             if "Soft blocked: yes" in rfkill_output.stdout:
@@ -83,7 +80,7 @@ class ConnectivityMonitor:
             self.log(f"⚠️ Error en rfkill: {e}")
 
     def _restart_wifi_interface(self):
-        """Reinicia la interfaz de red especificada."""
+        """Restarts the specified network interface."""
         self.log(f"♻️ Reiniciando interfaz {self.wifi_interface}...")
         self._unblock_wifi_rfkill()
         try:
@@ -95,14 +92,13 @@ class ConnectivityMonitor:
             self.log(f"❌ Error reiniciando interfaz: {e}")
 
     def _connect_to_known_networks(self) -> bool:
-        """Intenta conectarse a una de las redes Wi-Fi conocidas."""
+        """Tries to connect to one of the known Wi-Fi networks."""
         if not self.known_networks:
             return False
             
         for ssid, password in self.known_networks.items():
             self.log(f"📶 Intentando conectar a la red: {ssid}...")
             try:
-                # Limpia redes anteriores y añade una nueva configuración
                 subprocess.run(["sudo", "wpa_cli", "-i", self.wifi_interface, "remove_network", "all"], stdout=subprocess.DEVNULL)
                 net_id_output = subprocess.run(["sudo", "wpa_cli", "-i", self.wifi_interface, "add_network"], check=True, capture_output=True, text=True)
                 net_id = net_id_output.stdout.strip()
@@ -113,7 +109,7 @@ class ConnectivityMonitor:
                 subprocess.run(["sudo", "wpa_cli", "-i", self.wifi_interface, "select_network", net_id], check=True)
 
                 self.log(f"⏳ Esperando conexión a {ssid}...")
-                time.sleep(15) # Dar tiempo a que se establezca la conexión
+                time.sleep(15) # Give time for the connection to be established
 
                 if self._is_connected():
                     self.status_callback and self.status_callback(True, ssid)
@@ -124,16 +120,16 @@ class ConnectivityMonitor:
         return False
 
     def _restart_device(self):
-        """Reinicia el sistema operativo."""
+        """Reboots the operating system."""
         self.log(f"🔁 Reiniciando equipo (más de {self.reboot_timeout}s sin conexión).")
         os.system("sudo reboot")
 
     def _run_monitor(self):
-        """Bucle principal de monitoreo."""
+        """Main monitoring loop."""
         while not self._stop_event.is_set():
             if self._is_connected():
                 current_ssid = self._get_current_ssid()
-                # Notificar solo si el estado o el SSID ha cambiado
+                # Notify only if the status or SSID has changed
                 if self._last_status is not True or self._last_ssid != current_ssid:
                     self.log("✅ Conexión a Internet activa.")
                     if self.status_callback:
@@ -141,7 +137,7 @@ class ConnectivityMonitor:
                     self._last_status = True
                     self._last_ssid = current_ssid
                 if self.disconnected_time > 0:
-                    self.disconnected_time = 0 # Reiniciar contador solo si venimos de un estado desconectado
+                    self.disconnected_time = 0 # Reset counter only if coming from a disconnected state
             else:
                 if self._last_status is not False:
                     self.log("⚠️ Sin conexión a Internet.")
@@ -156,12 +152,12 @@ class ConnectivityMonitor:
                 
                 if self.disconnected_time >= self.reboot_timeout:
                     self._restart_device()
-                    break # Salir del bucle después de ordenar el reinicio
+                    break # Exit the loop after ordering the reboot
             
             self._stop_event.wait(self.check_interval)
 
 if __name__ == '__main__':
-    # Ejemplo de uso
+    # Example usage
     def simple_logger(message):
         print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] {message}")
         
@@ -172,7 +168,7 @@ if __name__ == '__main__':
     monitor.start()
     
     try:
-        # Mantener el script principal vivo para ver el monitoreo
+        # Keep the main script alive to see the monitoring
         while True:
             time.sleep(1)
     except KeyboardInterrupt:
