@@ -116,7 +116,8 @@ class ConnectivityMonitor:
                 time.sleep(15) # Dar tiempo a que se establezca la conexión
 
                 if self._is_connected():
-                    self.log(f"✅ Conectado exitosamente a {ssid}.")
+                    self.status_callback and self.status_callback(True, ssid)
+                    self.log(f"✅ Conectado a {ssid}.")
                     return True
             except subprocess.CalledProcessError as e:
                 self.log(f"❌ Falló el comando de conexión a {ssid}: {e}")
