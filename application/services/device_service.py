@@ -115,17 +115,13 @@ class DeviceService:
             self.modbus_serial and self.modbus_serial.is_connected()
         ])
         self.connected_logo = bool(self.logo and self.logo.is_connected())
-
-        print(f"📡 Dispositivo {self.name} estado -> TCP/Serial: {self.connected}, LOGO: {self.connected_logo}")
-
         if self.connected != prev_connected or self.connected_logo != prev_connected_logo:
             try:
                 status = "online" if self.connected else "offline"
                 logo_status = "online" if self.connected_logo else "offline"
-                print(f"🔔 Cambio detectado en {self.name}: TCP/Serial={status}, LOGO={logo_status}")
                 self.mqtt.on_change_device_connection(self.serial, status, logo_status)
             except Exception as e:
-                print(f"❌ Error notificando conexión de {self.name}: {e}")
+                self.log(f"❌ Error notificando conexión de {self.name}: {e}")
         
 
     def start(self) -> None:

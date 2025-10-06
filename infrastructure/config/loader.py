@@ -9,7 +9,7 @@ DATA_DIR = os.path.join(BASE_DIR, "../..", "data")
 
 DEVICES_FILE = os.path.join(DATA_DIR, "devices.json")
 SIGNALS_FILE = os.path.join(DATA_DIR, "signals.json")
-GATEWAY_FILE = os.path.join(DATA_DIR, "gateway.json")
+GATEWAY_PATH = os.path.join(DATA_DIR, "gateway.json")
 
 
 # === Internal caches for lazy loading ===
@@ -80,12 +80,12 @@ def get_gateway():
     """Return a copy of gateway configuration (lazy-loaded from gateway.json)."""
     global _gateway_cache
     if _gateway_cache is None:
-        _gateway_cache = _load_json(GATEWAY_FILE, {})
+        _gateway_cache = _load_json(GATEWAY_PATH, {})
     return dict(_gateway_cache)
 
 
 def save_gateway(gateway_data: dict):
     """Save gateway configuration to gateway.json and update cache."""
     global _gateway_cache
-    _save_json(GATEWAY_FILE, gateway_data)
+    _save_json(GATEWAY_PATH, gateway_data)
     _gateway_cache = dict(gateway_data)

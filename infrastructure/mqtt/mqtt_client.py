@@ -175,7 +175,6 @@ class MqttClient:
         self._connected_evt.set()
 
     def on_change_device_connection(self, device_serial, status, logo_status):
-        print(f"Dispositivo {device_serial} {status}")
         device_connection_topic = self._topic_publish_device_status(self.org_id, self.gw_id, device_serial)
         self._publish(device_connection_topic, json.dumps({"status": status, "logoStatus": logo_status}), qos=1)
 
