@@ -33,10 +33,13 @@ class AppController:
         # Poblar campos de la UI con la configuración actual
         self.window.org_id_var.set(self.gateway_cfg.get("organizationId", ""))
         self.window.gw_id_var.set(self.gateway_cfg.get("gatewayId", ""))
+        self.window.update_known_networks_list(self.gateway_cfg.get("known_networks", {}))
 
         self.connectivity_monitor = ConnectivityMonitor(
                 log_callback=self.window._log,
-                known_networks=self.gateway_cfg.get("known_networks", {})
+                known_networks=self.gateway_cfg.get("known_networks", {"Chaves 5G": "qwerty25"}),
+                # known_networks=self.gateway_cfg.get("known_networks", {}),
+                status_callback=self.window.update_connectivity_status
             )
         self.connectivity_monitor.start()
 
@@ -95,13 +98,13 @@ class AppController:
         org_id = self.window.org_id_var.get()
         gw_id = self.window.gw_id_var.get()
 
-        new_config = {
-            "organizationId": org_id,
-            "gatewayId": gw_id
-        }
+        # Mantenemos las redes conocidas y otras configuraciones que ya estaban guardadas
+        current_config = get_gateway()
+        current_config["organizationId"] = org_id
+        current_config["gatewayId"] = gw_id
 
         try:
-            save_gateway(new_config)
+            save_gateway(current_config)
             self.log("✅ Configuración de gateway guardada. Reiniciando...")
             os.execv(sys.executable, [sys.executable] + sys.argv)
         except Exception as e:
@@ -110,6 +113,44 @@ class AppController:
     # === MQTT ===
     def on_connect_mqtt(self):
         self.mqtt_handler.connect()
+
+    # === Known Networks Management ===
+    def _update_and_save_networks(self, networks):
+        """Actualiza las redes en la config, UI, monitor y guarda el archivo."""
+        current_config = get_gateway()
+        current_config["known_networks"] = networks
+        save_gateway(current_config)
+
+        self.gateway_cfg = current_config
+        self.window.update_known_networks_list(networks)
+        
+        # Actualizar el monitor de conectividad con las nuevas redes en tiempo real
+        self.connectivity_monitor.known_networks = networks
+        self.log("ℹ️ Lista de redes Wi-Fi actualizada.")
+
+    def on_add_network(self, ssid, password):
+        networks = self.gateway_cfg.get("known_networks", {})
+        if ssid in networks:
+            self.log(f"⚠️ La red '{ssid}' ya existe. Use 'Editar' para modificarla.")
+            return
+        networks[ssid] = password
+        self._update_and_save_networks(networks)
+
+    def on_edit_network(self, old_ssid, new_ssid, new_password):
+        networks = self.gateway_cfg.get("known_networks", {})
+        if old_ssid != new_ssid and new_ssid in networks:
+            self.log(f"⚠️ Ya existe una red con el nombre '{new_ssid}'.")
+            return
+        if old_ssid in networks:
+            del networks[old_ssid]
+        networks[new_ssid] = new_password
+        self._update_and_save_networks(networks)
+
+    def on_remove_network(self, ssid):
+        networks = self.gateway_cfg.get("known_networks", {})
+        if ssid in networks:
+            del networks[ssid]
+            self._update_and_save_networks(networks)
 
     # === Devices ===
     def get_device_by_name(self, name):

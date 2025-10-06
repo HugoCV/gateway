@@ -13,6 +13,7 @@ class ConnectivityMonitor:
     def __init__(
         self,
         log_callback: Callable[[str], None],
+        status_callback: Callable[[bool, str], None] | None = None,
         wifi_interface: str = "wlan0",
         known_networks: Dict[str, str] = None,
         check_interval: int = 60,
@@ -20,6 +21,7 @@ class ConnectivityMonitor:
     ):
         self.log = log_callback
         self.wifi_interface = wifi_interface
+        self.status_callback = status_callback
         self.known_networks = known_networks or {}
         self.check_interval = check_interval
         self.reboot_timeout = reboot_timeout
@@ -27,6 +29,9 @@ class ConnectivityMonitor:
         self.disconnected_time = 0
         self._stop_event = threading.Event()
         self._thread: threading.Thread | None = None
+        self._last_status: bool | None = None
+        self._last_ssid: str | None = None
+
 
     def start(self):
         """Inicia el hilo de monitoreo."""
@@ -54,6 +59,17 @@ class ConnectivityMonitor:
             return True
         except OSError:
             return False
+
+    def _get_current_ssid(self) -> str:
+        """Obtiene el SSID de la red Wi-Fi actual."""
+        try:
+            # Usamos iwgetid para obtener el SSID de la interfaz
+            result = subprocess.run(["iwgetid", "-r", self.wifi_interface], capture_output=True, text=True, check=True)
+            ssid = result.stdout.strip()
+            return ssid if ssid else "Desconocida"
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            # Si el comando falla o no se encuentra, no estamos conectados a una red Wi-Fi
+            return "Ninguna"
 
     def _unblock_wifi_rfkill(self):
         """Desbloquea el Wi-Fi si está bloqueado por software."""
@@ -115,13 +131,25 @@ class ConnectivityMonitor:
         """Bucle principal de monitoreo."""
         while not self._stop_event.is_set():
             if self._is_connected():
+                current_ssid = self._get_current_ssid()
+                # Notificar solo si el estado o el SSID ha cambiado
+                if self._last_status is not True or self._last_ssid != current_ssid:
+                    self.log("✅ Conexión a Internet activa.")
+                    if self.status_callback:
+                        self.status_callback(True, current_ssid)
+                    self._last_status = True
+                    self._last_ssid = current_ssid
                 if self.disconnected_time > 0:
-                    self.log("✅ Conexión a Internet restablecida.")
-                self.disconnected_time = 0
+                    self.disconnected_time = 0 # Reiniciar contador solo si venimos de un estado desconectado
             else:
-                self.log(f"⚠️ Sin conexión. Tiempo desconectado: {self.disconnected_time}s")
+                if self._last_status is not False:
+                    self.log("⚠️ Sin conexión a Internet.")
+                    if self.status_callback:
+                        self.status_callback(False, "Ninguna")
+                    self._last_status = False
+                    self._last_ssid = "Ninguna"
+
                 self.disconnected_time += self.check_interval
-                
                 if not self._connect_to_known_networks():
                     self._restart_wifi_interface()
                 
