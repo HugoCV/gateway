@@ -3,7 +3,7 @@ import threading
 from typing import Dict, Any, Optional
 from threading import RLock
 
-from infrastructure.http.http_client import HttpClient
+# from infrastructure.http.http_client import HttpClient
 from infrastructure.logo.logo_client import LogoModbusClient
 from infrastructure.modbus.modbus_tcp import ModbusTcp
 from infrastructure.modbus.modbus_serial import ModbusSerial
@@ -37,7 +37,7 @@ class DeviceService:
         self.log = log
         self.update_fields = update_fields
         self._lock = RLock()
-        self.http_interval =0.5
+        # self.http_interval =0.5
 
         # Allowed connectionConfig keys
         self._ALLOWED_CC_KEYS = {
@@ -64,8 +64,8 @@ class DeviceService:
         # self.modbus_serial: Optional[ModbusSerial] = None
         # self.logo: Optional[LogoModbusClient] = None
 
-        self.base_url = f"http://{self.cc['host']}:{self.cc['httpPort']}/api/dashboard"
-        self.http = HttpClient(self, self._send_signal, self.log)
+        # self.base_url = f"http://{self.cc['host']}:{self.cc['httpPort']}/api/dashboard"
+        # self.http = HttpClient(self, self._send_signal, self.log)
         self.modbus_serial = ModbusSerial(self, self._send_signal, self.log, self.cc["serialPort"], self.cc["baudrate"], self.cc["slaveId"])
         self.modbus_tcp = ModbusTcp(self, self._send_signal, self.log, self.cc["host"], self.cc["tcpPort"], self.cc["slaveId"])
         self.logo = LogoModbusClient(self, self.log, self._send_signal, self.cc.get("logoIp"), self.cc.get("logoPort"))
@@ -75,77 +75,77 @@ class DeviceService:
 
     def __del__(self):
         """Ensure cleanup on instance deletion."""
-        print("se llama a stop")
         self.stop()
 
     def stop(self) -> None:
         """Stop all per-device connections and threads."""
         print(f"⏹️ Stopping DeviceService for {self.device_id}")
-        # self._tcp_event.set()
-
-        # Cada handler debe tener un método stop()
-        try:
-            if self.http: 
-                self.http.disconnect()
-        except Exception: 
-            pass
 
         try:
-            if self.modbus_tcp: 
-                self.modbus_tcp.disconnect()
-        except Exception: 
-            pass
+            if self.modbus_tcp:
+                self.modbus_tcp.stop()
+        except Exception as e:
+            self.log(f"⚠️ Error stopping Modbus TCP: {e}")
 
         try:
-            if self.modbus_serial: 
-                print("modbus_serial disconnect")
+            if self.modbus_serial:
                 self.modbus_serial.stop()
-        except Exception: 
-            pass
+        except Exception as e:
+            self.log(f"⚠️ Error stopping Modbus Serial: {e}")
 
         try:
-            if self.logo: 
-                self.logo.disconnect()
-        except Exception: 
-            pass
+            if self.logo:
+                self.logo.stop()
+        except Exception as e:
+            self.log(f"⚠️ Error stopping LOGO: {e}")
 
-    def update_connected(self):
-        self.prev_connected = self.connected
-        self.prev_connected_logo = self.connect_logo
+        try:
+            if self.http:
+                self.http.stop()
+        except Exception as e:
+            self.log(f"⚠️ Error stopping HTTP: {e}")
+
+    def update_connected(self) -> None:
+        """Check device connection status (TCP/Serial/LOGO) and notify via MQTT if changed."""
+        prev_connected = getattr(self, "connected", False)
+        prev_connected_logo = getattr(self, "connected_logo", False)
+
         self.connected = any([
             self.modbus_tcp and self.modbus_tcp.is_connected(),
-            self.modbus_serial and self.modbus_serial.is_connected(),
-            self.http and self.http.is_connected(),
+            self.modbus_serial and self.modbus_serial.is_connected()
         ])
-        print(f"dispositivo {self.name} estado {self.connected} {self.modbus_serial.is_connected()}" )
-        self.connected_logo = self.logo and self.logo.is_connected()
-
-        if(self.prev_connected != self.connected or self.prev_connected != self.connect_logo):
+        self.connected_logo = bool(self.logo and self.logo.is_connected())
+        if self.connected != prev_connected or self.connected_logo != prev_connected_logo:
             try:
-                print("status", self.connected, self.connected_logo, self.name)
                 status = "online" if self.connected else "offline"
                 logo_status = "online" if self.connected_logo else "offline"
                 self.mqtt.on_change_device_connection(self.serial, status, logo_status)
             except Exception as e:
-                print("error",e)
+                self.log(f"❌ Error notificando conexión de {self.name}: {e}")
         
 
-    def start(self):
-        self.disconnect_logo()
-        self.connect_logo()
-        self.start_reading_logo()
+    def start(self) -> None:
+        """Start all per-device connections according to connectionConfig."""
+        # Siempre intentamos arrancar LOGO
+        if self.cc.get("logoIp") and self.cc.get("logoPort"):
+            try:
+                if self.logo:
+                    self.logo.start()
+            except Exception as e:
+                self.log(f"⚠️ Error starting LOGO: {e}")
 
-        match self.cc.get("defaultReader"):
-            case "serial":
+        reader = self.cc.get("defaultReader")
+        try:
+            if reader == "serial" and self.modbus_serial:
                 self.modbus_serial.start()
-            case "http":
-                self.disconnect_http()
-                self.connect_http()
-                self.start_reading_http()
-            case "tcp":
-                self.disconnect_modbus_tcp()
-                self.connect_modbus_tcp()
-        print("connectando dispositivo", self.name)
+            elif reader == "tcp" and self.modbus_tcp:
+                self.modbus_tcp.start()
+            elif reader == "http" and self.http:
+                self.http.start()
+        except Exception as e:
+            self.log(f"⚠️ Error starting {reader}: {e}")
+
+        print(f"▶️ Conectando dispositivo {self.name}")
         self.update_connected()
 
     def turn_on(self):
@@ -201,85 +201,20 @@ class DeviceService:
     # ---------------------------
 
     # Http
-    def connect_http(self) -> None:
-        if self.cc.get("host") and self.cc.get("httpPort"):
-            try:
-                self.http.connect(base_url=self.base_url, interval=self.http_interval)
-                self.log(f"🌐 HTTP connected: {self.base_url} ({self.device_id})")
-            except Exception as e:
-                self.log(f"⚠️ HTTP error ({self.device_id}): {e}")
+    # def connect_http(self) -> None:
+    #     if self.cc.get("host") and self.cc.get("httpPort"):
+    #         try:
+    #             self.http.connect(base_url=self.base_url, interval=self.http_interval)
+    #             self.log(f"🌐 HTTP connected: {self.base_url} ({self.device_id})")
+    #         except Exception as e:
+    #             self.log(f"⚠️ HTTP error ({self.device_id}): {e}")
 
-    def disconnect_http(self) -> None:
-        if self.http and hasattr(self.http, "stop"):
-            try:
-                self.http.stop()
-            except Exception:
-                pass
-
-    def start_reading_http(self):
-        if(self.http):
-            self.http.start_continuous_read()
-
-    # TCP
-    def start_reading_modbus_tcp(self)-> None:
-        self.modbus_tcp.start_reading()
-
-    def disconnect_modbus_tcp(self) -> None:
-        if self.modbus_tcp and hasattr(self.modbus_tcp, "stop"):
-            try:
-                self.modbus_tcp.stop()
-            except Exception:
-                pass
-    def connect_modbus_tcp(self) -> None:
-        self._tcp_event=threading.Thread(target=self.modbus_tcp.auto_reconnect, daemon=True).start()
-                
-    def turn_on_modbus_tcp(self):
-        self.modbus_tcp.turn_on()
-
-    def turn_off_modbus_tcp(self):
-        self.modbus_tcp.turn_off()
-
-    def restart_modbus_seial(self):
-        self.modbus_tcp.restart()
-
-
-    # Serial
-    def connect_modbus_serial(self) -> None:
-        threading.Thread(target=self.modbus_serial.auto_reconnect, daemon=True).start()
-    
-    def disconnect_modbus_serial(self) -> None:
-        if self.modbus_serial and hasattr(self.modbus_serial, "disconnect"):
-            try:
-                self.modbus_serial.disconnect()
-            except Exception:
-                pass
-
-    def turn_on_modbus_serial(self):
-        self.modbus_serial.turn_on()
-
-    def turn_off_modbus_serial(self):
-        self.modbus_serial.turn_off()
-    
-
-    # Logo
-    def connect_logo(self) -> None:
-        if self.cc.get("logoIp") and self.cc.get("logoPort"):
-            try:
-                threading.Thread(target=self.logo.auto_reconnect, daemon=True).start()
-                self.log(f"🧱 LOGO connected: {self.cc['logoIp']}:{self.cc['logoPort']} ({self.device_id})")
-            except Exception as e:
-                self.log(f"⚠️ LOGO error ({self.device_id}): {e}")
-
-    def start_reading_logo(self) -> None:
-        if(self.logo):
-            self.logo.start_reading()
-
-    def disconnect_logo(self) -> None:
-        if self.logo and hasattr(self.logo, "disconnect"):
-            try:
-                self.logo.disconnect()
-            except Exception:
-                pass
+    # def disconnect_http(self) -> None:
+    #     if self.http and hasattr(self.http, "stop"):
+    #         try:
+    #             self.http.stop()
+    #         except Exception:
+    #             pass
 
     # ---------------------------
     # Hot config update (reuses helpers)
@@ -288,60 +223,69 @@ class DeviceService:
         """
         Update self.cc (connectionConfig) and restart only the connections that changed.
         """
-        self.log(f"Se actualizarion las conexiones del dispositivo {self.serial}")
+        self.log(f"Actualizando configuración del dispositivo {self.serial}")
         if not isinstance(new_cfg, dict):
-            self.log("⚠️ update_connection_config: invalid argument (dict expected).")
+            self.log("update_connection_config: argumento inválido (dict esperado).")
             return
 
         with self._lock:
+            # Filtrar solo claves permitidas
             filtered = {k: v for k, v in new_cfg.items() if k in self._ALLOWED_CC_KEYS}
             if not filtered:
-                self.log("update_connection_config: no applicable changes.")
+                self.log("ℹ️ update_connection_config: no hay cambios aplicables.")
                 return
-            
+
             prev = dict(self.cc)
 
-
-            # Merge (partial): new/updated keys; None values remove key
+            # Merge parcial: agrega/actualiza valores o elimina si vienen en None
             for k, v in filtered.items():
                 if v is None and k in self.cc:
                     del self.cc[k]
                 elif v is not None:
                     self.cc[k] = v
 
-            # changed_http = any(prev.get(k) != self.cc.get(k) for k in ("host", "httpPort"))
-            changed_tcp  = any(prev.get(k) != self.cc.get(k) for k in ("host", "tcpPort", "slaveId"))
-            changed_ser  = any(prev.get(k) != self.cc.get(k) for k in ("serialPort", "baudrate", "slaveId"))
-            changed_logo = any(prev.get(k) != self.cc.get(k) for k in ("logoIp", "logoPort"))
-            changed_mode = prev.get("mode") != self.cc.get("mode")
+            # Detectar cambios
+            changed_tcp    = any(prev.get(k) != self.cc.get(k) for k in ("host", "tcpPort", "slaveId"))
+            changed_serial = any(prev.get(k) != self.cc.get(k) for k in ("serialPort", "baudrate", "slaveId"))
+            changed_logo   = any(prev.get(k) != self.cc.get(k) for k in ("logoIp", "logoPort"))
+            changed_mode   = prev.get("mode") != self.cc.get("mode")
 
-            # if changed_http:
-            #     self.log(f"Restarting HTTP ({self.device_id}) due to config change.")
-            #     self._stop_http(); self._start_http()
-
+            # Aplicar cambios
             if changed_tcp:
-                print(f"Restarting Modbus TCP ({self.device_id}) due to config change.")
-                self.modbus_tcp.update_config(self.cc.get("host"), self.cc.get("tcpPort"), self.cc.get("slaveId"))
+                self.log(f"♻️ Reiniciando Modbus TCP ({self.device_id}) por cambio de configuración.")
+                self.modbus_tcp.update_config(
+                    self.cc.get("host"),
+                    self.cc.get("tcpPort"),
+                    self.cc.get("slaveId")
+                )
 
-
-            if changed_ser and self.modbus_serial.is_connected():
-                self.log(f"Restarting Modbus Serial ({self.device_id}) due to config change.")
-                self.modbus_serial.update_config(self.cc.get("serialPort"), self.cc.get("baudrate"), self.cc.get("slaveId"))
-
-            if(changed_mode):
-                print("filtered", self.cc["mode"])
-                if self.cc["mode"] == "local":
-                    return self.set_local()
-                self.set_remote()
+            if changed_serial:
+                self.log(f"♻️ Reiniciando Modbus Serial ({self.device_id}) por cambio de configuración.")
+                self.modbus_serial.update_config(
+                    self.cc.get("serialPort"),
+                    self.cc.get("baudrate"),
+                    self.cc.get("slaveId")
+                )
 
             if changed_logo:
-                self.log(f"Restarting LOGO! ({self.device_id}) due to config change.")
-                self.logo.update_config(self.cc.get("serialPort"), self.cc.get("baudrate"), self.cc.get("slaveId"))
+                self.log(f"♻️ Reiniciando LOGO! ({self.device_id}) por cambio de configuración.")
+                self.logo.update_config(
+                    self.cc.get("logoIp"),
+                    self.cc.get("logoPort")
+                )
 
-            if not any((changed_tcp, changed_ser, changed_logo, changed_mode)):
-                self.log("ℹupdate_connection_config: no effective changes in endpoints.")
+            if changed_mode:
+                self.log(f"♻️ Modo cambiado a {self.cc.get('mode')}")
+                if self.cc.get("mode") == "local":
+                    self.set_local()
+                else:
+                    self.set_remote()
+
+            if not any((changed_tcp, changed_serial, changed_logo, changed_mode)):
+                self.log("ℹ️ update_connection_config: no hubo cambios efectivos.")
+
+        # Notificar actualización
         self.update_fields(self)
-
 
     # ---------------------------
     # Internal helpers

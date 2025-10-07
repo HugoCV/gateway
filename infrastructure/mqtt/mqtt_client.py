@@ -175,7 +175,6 @@ class MqttClient:
         self._connected_evt.set()
 
     def on_change_device_connection(self, device_serial, status, logo_status):
-        print(f"Dispositivo {device_serial} {status}")
         device_connection_topic = self._topic_publish_device_status(self.org_id, self.gw_id, device_serial)
         self._publish(device_connection_topic, json.dumps({"status": status, "logoStatus": logo_status}), qos=1)
 
@@ -260,33 +259,6 @@ class MqttClient:
         topic = self._topic_publish_signal(org_id, gw_id, serial)
         if self._publish(topic, json.dumps(signal_info, default=str), qos=1):
             self.log(f"📤 Signal → {topic}")
-
-    def on_send_signal(self, results: Dict[str, Any], group: str) -> None:
-        try:
-            if not isinstance(results, dict) or not results:
-                self.log("⚠️ Resultado vacío o no es dict; no se envía MQTT.")
-                return
-
-            serial = (self.window.serial_var.get() or "").strip()
-            if not serial:
-                self.log("⚠️ Serial vacío; se omite envío MQTT.")
-                return
-
-            org_id = self.gateway_cfg.get("organization_id") or self.gateway_cfg.get("organizationId")
-            gw_id = self.gateway_cfg.get("gateway_id") or self.gateway_cfg.get("gatewayId")
-            if not org_id or not gw_id:
-                self.log(f"⚠️ Faltan IDs en gateway_cfg: org={org_id} gw={gw_id}")
-                return
-
-            topic_info = {
-                "serial_number": serial,
-                "organization_id": org_id,
-                "gateway_id": gw_id,
-            }
-            signal = {"group": group, "payload": results}
-            self.send_signal(topic_info, signal)
-        except Exception as e:
-            self.log(f"❌ on_send_signal error: {e}")
 
     def request_gateway_config(self, cb: Callable) -> None:
         self.client.message_callback_add(self.gatewayRespTopic, cb)

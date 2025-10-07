@@ -13,7 +13,6 @@ class DeviceManager:
         def _cb(c,u,m):
             try:
                 data = json.loads(m.payload.decode("utf-8"))
-                print("load devices", data)
                 self.set_devices(data["devices"])
             except Exception:
                 data = None

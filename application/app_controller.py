@@ -1,10 +1,11 @@
-import os, sys, time
+import os, sys, time, json
 import threading
 from application.managers.gateway_manager import GatewayManager
 from application.managers.device_manager import DeviceManager
 from application.services.device_service import DeviceService
+from infrastructure.connectivity.connectivity import ConnectivityMonitor
 from infrastructure.mqtt.mqtt_client import MqttClient
-from infrastructure.config.loader import get_gateway
+from infrastructure.config.loader import get_gateway, save_gateway
 
 # =========================
 # Global
@@ -28,6 +29,19 @@ class AppController:
             command_callback=self.on_receive_command,
             command_gateway_callback=self.on_receive_gateway_command
         )
+        
+        # Poblar campos de la UI con la configuración actual
+        self.window.org_id_var.set(self.gateway_cfg.get("organizationId", ""))
+        self.window.gw_id_var.set(self.gateway_cfg.get("gatewayId", ""))
+        self.window.update_known_networks_list(self.gateway_cfg.get("known_networks", {}))
+
+        self.connectivity_monitor = ConnectivityMonitor(
+                log_callback=self.window._log,
+                known_networks=self.gateway_cfg.get("known_networks", {"Chaves 5G": "qwerty25"}),
+                # known_networks=self.gateway_cfg.get("known_networks", {}),
+                status_callback=self.window.update_connectivity_status
+            )
+        self.connectivity_monitor.start()
 
         # Conectar MQTT al final
         self.on_connect_mqtt()
@@ -35,24 +49,7 @@ class AppController:
         self.device_manager = DeviceManager(self.mqtt_handler, self.refresh_device_list, self.window._log)
         self.gateway_manager = GatewayManager(self.mqtt_handler, self._refresh_gateway_fields, self.window._log)
         self.devices = {}
-
-        self.monitor_threads()
-
-
-
-
-    def monitor_threads(self, interval: float = 2.0):
-        """Start a background thread that logs active thread count periodically."""
-    
-        def _worker():
-            while True:
-                threads = threading.enumerate()
-                print("threads", len(threads))
-                time.sleep(interval)
-
-        t = threading.Thread(target=_worker, daemon=True)
-        t.start()
-        return t
+        
     # === commands ===
     def on_receive_gateway_command(self, command):
         print("on_receive_gateway_command", command)
@@ -93,13 +90,67 @@ class AppController:
         self.device_manager.load_devices()
 
     # === Gateway ===
+    # NOTE: This method is currently unused as the UI fields have been removed.
     def _refresh_gateway_fields(self, gateway):
-        self.window.gw_name_var.set(gateway.get("name", ""))
-        self.window.loc_var.set(gateway.get("location", ""))
+        print("refresh_gateway_fields", gateway)
 
+    def on_save_gateway_config(self):
+        org_id = self.window.org_id_var.get()
+        gw_id = self.window.gw_id_var.get()
+
+        # Mantenemos las redes conocidas y otras configuraciones que ya estaban guardadas
+        current_config = get_gateway()
+        current_config["organizationId"] = org_id
+        current_config["gatewayId"] = gw_id
+
+        try:
+            save_gateway(current_config)
+            self.log("✅ Configuración de gateway guardada. Reiniciando...")
+            os.execv(sys.executable, [sys.executable] + sys.argv)
+        except Exception as e:
+            self.log(f"❌ Error al guardar la configuración: {e}")
+    
     # === MQTT ===
     def on_connect_mqtt(self):
         self.mqtt_handler.connect()
+
+    # === Known Networks Management ===
+    def _update_and_save_networks(self, networks):
+        """Actualiza las redes en la config, UI, monitor y guarda el archivo."""
+        current_config = get_gateway()
+        current_config["known_networks"] = networks
+        save_gateway(current_config)
+
+        self.gateway_cfg = current_config
+        self.window.update_known_networks_list(networks)
+        
+        # Actualizar el monitor de conectividad con las nuevas redes en tiempo real
+        self.connectivity_monitor.known_networks = networks
+        self.log("ℹ️ Lista de redes Wi-Fi actualizada.")
+
+    def on_add_network(self, ssid, password):
+        networks = self.gateway_cfg.get("known_networks", {})
+        if ssid in networks:
+            self.log(f"⚠️ La red '{ssid}' ya existe. Use 'Editar' para modificarla.")
+            return
+        networks[ssid] = password
+        self._update_and_save_networks(networks)
+
+    def on_edit_network(self, old_ssid, new_ssid, new_password):
+        networks = self.gateway_cfg.get("known_networks", {})
+        if old_ssid != new_ssid and new_ssid in networks:
+            self.log(f"⚠️ Ya existe una red con el nombre '{new_ssid}'.")
+            return
+        if old_ssid in networks:
+            del networks[old_ssid]
+        networks[new_ssid] = new_password
+        self._update_and_save_networks(networks)
+
+    def on_remove_network(self, ssid):
+        networks = self.gateway_cfg.get("known_networks", {})
+        if ssid in networks:
+            del networks[ssid]
+            self._update_and_save_networks(networks)
 
     # === Devices ===
     def get_device_by_name(self, name):
@@ -111,15 +162,8 @@ class AppController:
 
         self.devices = self.create_all_devices(devices)
         self.services = list(self.devices.values())
-        names = [svc.device["name"] for svc in self.services]
-        self.window.device_combo["values"] = names
-        if names:
-            self.window.device_combo.current(0)
-            self.selected_serial = self.services[0].serial
-            self.update_device_fields(self.services[0])
-        else:
-            self.window.device_combo.set("")
-            self.update_device_fields({})
+        if self.window:
+            self.window.update_device_list(self.services)
 
     def create_all_devices(self, devices):
         for ds in getattr(self, "devices", {}).values():
@@ -132,64 +176,8 @@ class AppController:
                 gateway_cfg=self.gateway_cfg,
                 device=dev,
                 log=self.window._log,
-                update_fields=self.update_device_fields
+                update_fields=None # self.update_device_fields -> No longer used
             )
 
             device_services[ds.serial] = ds
         return device_services
-
-    def on_select_device(self, event=None):
-        selected = self.window.selected_device_var.get()
-        deviceDir = self.get_device_by_name(selected)
-        device = self.devices.get(deviceDir["serialNumber"])
-        self.selected_serial = device.serial
-        if not device:
-            self.window._log("Dispositivo no encontrado.")
-            return
-        self.update_device_fields(device)
-
-    def update_device_fields(self, device_service) -> None:
-        
-        if(self.selected_serial != device_service.serial):
-            return 
-            
-        is_service_like = hasattr(device_service, "cc") or hasattr(device_service, "device")
-
-        if is_service_like:
-            svc = device_service
-            d = getattr(svc, "device", {}) or {}
-            cc = getattr(svc, "cc", {}) or {}
-
-            name   = d.get("name") or getattr(svc, "device_id", "")
-            model  = getattr(svc, "model", "") or d.get("deviceModel", "")
-            serial = getattr(svc, "serial", "") or d.get("serialNumber", "")
-        else:
-            
-            d = device_service or {}
-            cc = d.get("connectionConfig") or {}
-
-            name   = d.get("name", "")
-            model  = d.get("deviceModel", "")
-            serial = d.get("serialNumber", "")
-        self.selected_serial = serial
-
-        def set_str(var, value):
-            var.set("" if value is None else str(value))
-
-        # Top-level device fields
-        set_str(self.window.device_name_var, name)
-        set_str(self.window.serial_var,      serial)
-        set_str(self.window.model_var,       model)
-
-        # Connection config fields (HTTP / TCP share 'host' unless you split them)
-        set_str(self.window.http_ip_var,     cc.get("host", ""))
-        set_str(self.window.http_port_var,   cc.get("httpPort", ""))
-        set_str(self.window.tcp_ip_var,      cc.get("host", ""))
-        set_str(self.window.tcp_port_var,    cc.get("tcpPort", ""))
-
-        # Serial / LOGO fields
-        set_str(self.window.serial_port_var, cc.get("serialPort", ""))
-        set_str(self.window.baudrate_var,    cc.get("baudrate", ""))
-        set_str(self.window.slave_id_var,    cc.get("slaveId", ""))
-        set_str(self.window.logo_ip_var,     cc.get("logoIp", ""))
-        set_str(self.window.logo_port_var,   cc.get("logoPort", ""))

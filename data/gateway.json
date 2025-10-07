@@ -1,4 +1,8 @@
 {
   "organizationId": "689e5673c917bedc604544ed",
-  "gatewayId": "689e56bcc917bedc60454521"
+  "gatewayId": "689e56bcc917bedc60454521",
+  "known_networks": {
+    "MiWiFi_Casa": "mi_clave_secreta",
+    "tester": "test"
+  }
 }

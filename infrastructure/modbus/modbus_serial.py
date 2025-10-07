@@ -25,7 +25,7 @@ SIGNAL_MODBUS_SERIAL_DIR = {
     "dir": 5,       
     "speed": 785,
     "alarm": 815,
-    "temp": 860,
+    "temp": 859,
 }
 
 DEVICE = {
@@ -39,8 +39,8 @@ DEVICE = {
     }
 }
 
-STATUS_TYPES_DIR = {0: "stop", 1: "fault", 2: "run"}
-DIR_TYPE_DIR = {4: "reverse", 1: "stop", 129: "auto", 130: "fwd", 193: "acc", 194: "fwd"}
+STATUS_TYPES_DIR = {0: "stop", 1: "fault", 2: "run", 7:"run"}
+DIR_TYPE_DIR = {4: "reverse", 1: "stop", 129: "auto", 130: "fwd", 193: "acc", 194: "fwd", 66:"fwd"}
 
 
 class ModbusSerial:
@@ -253,12 +253,6 @@ class ModbusSerial:
     def turn_off(self) -> bool:
         return self.write_register(DEVICE["status"]["address"], DEVICE["status"]["values"]["off"])
 
-    def reset(self) -> bool:
-        self.log("🔄 Resetting Modbus RTU connection...")
-        self.disconnect()
-        time.sleep(0.5)
-        return self.connect(timeout=1.0)
-
     def _build_signal_from_regs(self, regs: dict[int, int], modbus_dir) -> dict:
         s = {}
         for name, addr in modbus_dir.items():
@@ -297,3 +291,26 @@ class ModbusSerial:
         payload = {k: v for k, v in signal.items() if v is not None}
         if payload:
             self.send_signal(payload, "drive")
+    def update_config(self, port=None, baudrate=None, slave_id=None) -> bool:
+        """Update TCP parameters and reconnect if needed."""
+        changed = False
+
+        if port and port != self.port:
+            self.port = port
+            changed = True
+
+        if baudrate and baudrate != self.baudrate:
+            self.baudrate = baudrate
+            changed = True
+
+        if slave_id and slave_id != self.slave_id:
+            self.slave_id = slave_id
+            changed = True
+
+        if changed:
+            self.log(f"🔄 Updating TCP config: {self.baudrate}:{self.port}, slave={self.slave_id}")
+            self.stop_reconnect()
+            self.start()
+            return True
+
+        return False
