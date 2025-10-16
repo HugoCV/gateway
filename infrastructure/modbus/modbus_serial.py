@@ -47,7 +47,7 @@ class ModbusSerial:
     """
     Manages a Modbus RTU connection over a serial port (RS-485).
     """
-    def __init__(self, device, send_signal, log, port, baudrate, slave_id):
+    def __init__(self, device, send_signal, log, port, baudrate, slave_id, modbus_cfg):
         self.device = device
         self.log = log
         self.send_signal = send_signal
@@ -57,8 +57,16 @@ class ModbusSerial:
         self.port = port
         self.baudrate = baudrate
         self.slave_id = slave_id
+        self.modbus_cfg = modbus_cfg
 
-        # Control de hilos
+        # modbus
+        self.modbus_cfg = modbus_cfg
+        self.modbus_regs = self.modbus_cfg["registers"].values()
+        self.addresses = [reg["address"] for reg in self.modbus_cfg["registers"].values()]
+        for reg in self.modbus_regs:
+            print(reg)
+
+        # threads
         self._stop_event = threading.Event()
         self._thread: threading.Thread | None = None
         self._reconnecting = False
@@ -171,12 +179,12 @@ class ModbusSerial:
     # ---------------------------
     # Polling de registros
     # ---------------------------
-    def poll_registers(self, addresses: list[int], interval: float = 0.5):
+    def poll_registers(self, interval: float = 0.5):
         def _poll():
             failure_count = 0
             while not self._stop_event.is_set():
                 regs_group = {}
-                for addr in addresses:
+                for addr in self.addresses:
                     try:
                         regs = self.read_holding_registers(addr, count=1)
                         if regs:
@@ -185,7 +193,7 @@ class ModbusSerial:
                         else:
                             failure_count += 1
                     except Exception as e:
-                        self.log(f"❌ Error polling {addr}: {e}")
+                        self.log(f"Error polling {addr}: {e}")
                         failure_count += 1
 
                 if failure_count >= 3:
@@ -223,9 +231,9 @@ class ModbusSerial:
                 rr = self.client.read_holding_registers(address, count=count, device_id=self.slave_id)
                 if rr and not rr.isError():
                     return list(rr.registers)
-                self.log(f"❌ Error en read_holding_registers: {rr}")
+                self.log(f"Error en read_holding_registers: {rr}")
             except Exception as e:
-                self.log(f"❌ Excepción en read_holding_registers: {e}")
+                self.log(f"Excepción en read_holding_registers: {e}")
         return None
 
     def write_register(self, address: int, value: int) -> bool:
@@ -237,9 +245,9 @@ class ModbusSerial:
             if rr and not rr.isError():
                 self.log(f"✍️ Escribió {value} en registro {address}")
                 return True
-            self.log(f"❌ Error writing register {address}: {rr}")
+            self.log(f"Error writing register {address}: {rr}")
         except Exception as e:
-            self.log(f"❌ Excepción writing register {address}: {e}")
+            self.log(f"Excepción writing register {address}: {e}")
         return False
 
     def restart(self):
@@ -270,6 +278,29 @@ class ModbusSerial:
                 s[name] = {"value": DIR_TYPE_DIR.get(v, f"Desconocido ({v})"), "kind": "operation"}
         return s
 
+    # def _build_signal_from_regs(self, read_regs: dict[int, int], modbus_dir) -> dict:
+    #     signal = {}
+    #     for modbus_reg in self.modbus_regs:
+    #         v = read_regs.get(addr)
+    #         if v is None:
+    #             signal[name] = None
+    #             continue
+    #         if name in MODBUS_SCALES:
+    #             signal[name] = {"value": v * MODBUS_SCALES[name], "kind": "operation"}
+    #         else:
+    #             signal[name] = {"value": v, "kind": "operation"}
+    #         if name == "stat":
+    #             signal[name] = {
+    #                 "value": STATUS_TYPES_DIR.get(v, f"Desconocido ({v})"),
+    #                 "kind": "operation",
+    #             }
+    #         if name == "dir":
+    #             signal[name] = {
+    #                 "value": DIR_TYPE_DIR.get(v, f"Desconocido ({v})"),
+    #                 "kind": "operation",
+    #             }
+    #     return signal
+
     def set_local(self) -> bool:
         ok = self.write_register(DEVICE["mode"]["address"], DEVICE["mode"]["values"]["local"])
         self.log("✅ Puesto en local" if ok else "❌ No se pudo poner en local")
@@ -284,7 +315,7 @@ class ModbusSerial:
         if not self.is_connected():
             return
         addrs = list(dict.fromkeys(SIGNAL_MODBUS_SERIAL_DIR.values()))
-        self.serial_poll = self.poll_registers(addresses=addrs, interval=self.poll_interval)
+        self.serial_poll = self.poll_registers(interval=self.poll_interval)
 
     def on_modbus_serial_read_callback(self, regs):
         signal = self._build_signal_from_regs(regs, SIGNAL_MODBUS_SERIAL_DIR)
