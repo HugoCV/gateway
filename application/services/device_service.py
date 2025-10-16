@@ -1,5 +1,3 @@
-# device_service.py
-import threading
 from typing import Dict, Any, Optional
 from threading import RLock
 
@@ -59,15 +57,8 @@ class DeviceService:
         self.cc: Dict[str, Any] = self.device.get("connectionConfig") or {}
 
         # Per-device handlers
-        # self.http: Optional[HttpClient] = None
-        # self.modbus_tcp: Optional[ModbusTcp] = None
-        # self.modbus_serial: Optional[ModbusSerial] = None
-        # self.logo: Optional[LogoModbusClient] = None
-
-        # self.base_url = f"http://{self.cc['host']}:{self.cc['httpPort']}/api/dashboard"
-        # self.http = HttpClient(self, self._send_signal, self.log)
-        self.modbus_serial = ModbusSerial(self, self._send_signal, self.log, self.cc["serialPort"], self.cc["baudrate"], self.cc["slaveId"])
-        self.modbus_tcp = ModbusTcp(self, self._send_signal, self.log, self.cc["host"], self.cc["tcpPort"], self.cc["slaveId"])
+        self.modbus_serial = ModbusSerial(self, self._send_signal, self.log, self.cc["serialPort"], self.cc["baudrate"], self.cc["slaveId"], device["modbusConfig"])
+        self.modbus_tcp = ModbusTcp(self, self._send_signal, self.log, self.cc["host"], self.cc["tcpPort"], self.cc["slaveId"], device["modbusConfig"])
         self.logo = LogoModbusClient(self, self.log, self._send_signal, self.cc.get("logoIp"), self.cc.get("logoPort"))
         self.connected: bool = False
         self.connected_logo = False
@@ -79,8 +70,6 @@ class DeviceService:
 
     def stop(self) -> None:
         """Stop all per-device connections and threads."""
-        print(f"⏹️ Stopping DeviceService for {self.device_id}")
-
         try:
             if self.modbus_tcp:
                 self.modbus_tcp.stop()
@@ -98,12 +87,6 @@ class DeviceService:
                 self.logo.stop()
         except Exception as e:
             self.log(f"⚠️ Error stopping LOGO: {e}")
-
-        try:
-            if self.http:
-                self.http.stop()
-        except Exception as e:
-            self.log(f"⚠️ Error stopping HTTP: {e}")
 
     def update_connected(self) -> None:
         """Check device connection status (TCP/Serial/LOGO) and notify via MQTT if changed."""
@@ -140,8 +123,8 @@ class DeviceService:
                 self.modbus_serial.start()
             elif reader == "tcp" and self.modbus_tcp:
                 self.modbus_tcp.start()
-            elif reader == "http" and self.http:
-                self.http.start()
+            # elif reader == "http" and self.http:
+            #     self.http.start()
         except Exception as e:
             self.log(f"⚠️ Error starting {reader}: {e}")
 
@@ -196,29 +179,6 @@ class DeviceService:
                 changed = self.logo.restart()
         print(f"Probando reiniciar con {self.cc['mode']}: {changed}")
 
-    # ---------------------------
-    # Connection helpers (connect/disconnect)
-    # ---------------------------
-
-    # Http
-    # def connect_http(self) -> None:
-    #     if self.cc.get("host") and self.cc.get("httpPort"):
-    #         try:
-    #             self.http.connect(base_url=self.base_url, interval=self.http_interval)
-    #             self.log(f"🌐 HTTP connected: {self.base_url} ({self.device_id})")
-    #         except Exception as e:
-    #             self.log(f"⚠️ HTTP error ({self.device_id}): {e}")
-
-    # def disconnect_http(self) -> None:
-    #     if self.http and hasattr(self.http, "stop"):
-    #         try:
-    #             self.http.stop()
-    #         except Exception:
-    #             pass
-
-    # ---------------------------
-    # Hot config update (reuses helpers)
-    # ---------------------------
     def update_connection_config(self, new_cfg: Dict[str, Any]) -> None:
         """
         Update self.cc (connectionConfig) and restart only the connections that changed.
