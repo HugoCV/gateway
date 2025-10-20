@@ -80,16 +80,47 @@ class ConnectivityMonitor:
             self.log(f"⚠️ Error en rfkill: {e}")
 
     def _restart_wifi_interface(self):
-        """Restarts the specified network interface."""
-        self.log(f"♻️ Reiniciando interfaz {self.wifi_interface}...")
-        self._unblock_wifi_rfkill()
+        """
+        Reinicia la interfaz Wi-Fi usando NetworkManager (nmcli).
+        Probado en reComputer R100x / Debian 12.
+        """
+        self.log("♻️ Reiniciando interfaz Wi-Fi mediante NetworkManager...")
+
         try:
-            subprocess.run(["sudo", "ip", "link", "set", self.wifi_interface, "down"], check=True)
+            # 1️⃣ Apagar Wi-Fi
+            subprocess.run(["sudo", "nmcli", "radio", "wifi", "off"], check=True)
+            self.log("📴 Wi-Fi apagado.")
             time.sleep(3)
-            subprocess.run(["sudo", "ip", "link", "set", self.wifi_interface, "up"], check=True)
-            self.log("✅ Interfaz reiniciada.")
+
+            # 2️⃣ Encender Wi-Fi
+            subprocess.run(["sudo", "nmcli", "radio", "wifi", "on"], check=True)
+            self.log("📶 Wi-Fi encendido.")
+            time.sleep(5)
+
+            # 3️⃣ Verificar estado actual
+            result = subprocess.run(
+                ["nmcli", "-t", "-f", "DEVICE,STATE,CONNECTION", "device", "status"],
+                capture_output=True, text=True
+            )
+            output = result.stdout.strip()
+            for line in output.splitlines():
+                if line.startswith("wlan0:"):
+                    parts = line.split(":")
+                    state = parts[1]
+                    conn = parts[2] if len(parts) > 2 else ""
+                    self.log(f"📡 wlan0 → {state} ({conn})")
+                    if state == "connected":
+                        self.log(f"✅ Wi-Fi reconectado correctamente a {conn}")
+                        return
+                    elif state == "disconnected":
+                        self.log("⚠️ Wi-Fi encendido pero sin conexión, intentando reconectar...")
+                        self._reconnect_known_networks()
+                        return
+
+            self.log("✅ Interfaz Wi-Fi reiniciada.")
         except subprocess.CalledProcessError as e:
-            self.log(f"❌ Error reiniciando interfaz: {e}")
+            self.log(f"❌ Error reiniciando interfaz Wi-Fi: {e}")
+
 
     def _connect_to_known_networks(self) -> bool:
         """Tries to connect to one of the known Wi-Fi networks."""
@@ -117,6 +148,23 @@ class ConnectivityMonitor:
                     return True
             except subprocess.CalledProcessError as e:
                 self.log(f"❌ Falló el comando de conexión a {ssid}: {e}")
+        return False
+
+
+    def _reconnect_known_networks(self):
+        """Reconecta automáticamente a redes conocidas mediante nmcli."""
+        for ssid, password in getattr(self, "known_networks", {}).items():
+            try:
+                self.log(f"🔄 Intentando reconectar a {ssid}...")
+                subprocess.run(
+                    ["sudo", "nmcli", "device", "wifi", "connect", ssid, "password", password],
+                    check=True
+                )
+                self.log(f"✅ Reconectado a {ssid}")
+                return True
+            except subprocess.CalledProcessError:
+                self.log(f"❌ No se pudo conectar a {ssid}")
+        self.log("⚠️ Ninguna red conocida se pudo reconectar.")
         return False
 
     def _restart_device(self):

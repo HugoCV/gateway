@@ -1,8 +1,17 @@
 {
-  "organizationId": "68ee6d7f81c403592d8157d0",
-  "gatewayId": "68ee6d7f81c403592d815806",
+  "organizationId": "68784d9492ad8045bc7b1680",
+  "gatewayId": "68784d9592ad8045bc7b16b3",
   "known_networks": {
-    "MiWiFi_Casa": "mi_clave_secreta",
-    "tester": "test"
-  }
+    "WTP": "Ap2302#2006"
+  },
+  "_id": "68784d9592ad8045bc7b16b3",
+  "name": "coto-brus-puerta-enlace",
+  "location": "Costa Rica - Coto Brus",
+  "metadata": {
+    "seeded": true
+  },
+  "createdAt": "2025-07-17T01:10:45.417Z",
+  "updatedAt": "2025-10-17T20:48:35.961Z",
+  "__v": 0,
+  "status": "offline"
 }

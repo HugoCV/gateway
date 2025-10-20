@@ -184,11 +184,10 @@ class MqttClient:
         self._connected_evt.clear()
 
     def on_log(self, client, userdata, level, buf) -> None:
-        if level >= mqtt.MQTT_LOG_INFO:
-            self.log(f"[MQTT-{level}] {buf}")
+        if level >= 50:
+            print(f"[MQTT-{level}] {buf}")
 
     def on_message(self, client, userdata, msg):
-        print("ON MESSAGE")
         if topic_matches_sub(self.deviceCommandTopic, msg.topic):
             parts = msg.topic.split("/")
             try:
@@ -253,12 +252,13 @@ class MqttClient:
         serial = topic_info.get("serial_number") or topic_info.get("serialNumber")
 
         if not (org_id and gw_id and serial):
-            self.log(f"⚠️ Missing topic info: {topic_info}")
+            self.log(f"Missing topic info: {topic_info}")
             return
 
         topic = self._topic_publish_signal(org_id, gw_id, serial)
-        if self._publish(topic, json.dumps(signal_info, default=str), qos=1):
-            self.log(f"📤 Signal → {topic}")
+        self._publish(topic, json.dumps(signal_info, default=str), qos=1)
+        # if self._publish(topic, json.dumps(signal_info, default=str), qos=1):
+        #     print(f"Signal → {signal_info}")
 
     def request_gateway_config(self, cb: Callable) -> None:
         self.client.message_callback_add(self.gatewayRespTopic, cb)
