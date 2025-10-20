@@ -3,8 +3,6 @@ from tkinter import ttk, scrolledtext, simpledialog
 from tkinter import messagebox
 from typing import Dict
 from application.app_controller import AppController
-# from infrastructure.modbus.modbus_tcp import ModbusTcp
-# from infrastructure.http.http_client import HttpClient
 from infrastructure.mqtt.mqtt_client import MQTT_HOST, MQTT_PORT
 
 class MainWindow(tk.Tk):
@@ -61,7 +59,6 @@ class MainWindow(tk.Tk):
         ttk.Entry(frame, textvariable=self.gw_id_var).grid(row=1, column=1, sticky="ew", padx=5, pady=5)
 
         # Save Button
-        # El command se asignará en el controller
         save_button = ttk.Button(frame, text="Guardar y Reiniciar", command=lambda: self.controller.on_save_gateway_config())
         save_button.grid(row=2, column=1, sticky="e", padx=5, pady=10)
 
@@ -72,13 +69,13 @@ class MainWindow(tk.Tk):
 
         frame.columnconfigure(1, weight=1)
 
-        # Estado de la conexión
+        # Connection Status
         ttk.Label(frame, text="Internet:").grid(row=0, column=0, sticky="w", padx=5, pady=2)
         self.conn_status_var = tk.StringVar(value="Verificando...")
         self.conn_status_label = ttk.Label(frame, textvariable=self.conn_status_var, font=("Segoe UI", 10, "bold"))
         self.conn_status_label.grid(row=0, column=1, sticky="w", padx=5, pady=2)
 
-        # Red actual
+        # Actual Network
         ttk.Label(frame, text="Red Wi-Fi:").grid(row=1, column=0, sticky="w", padx=5, pady=2)
         self.conn_network_var = tk.StringVar(value="-")
         ttk.Label(frame, textvariable=self.conn_network_var).grid(row=1, column=1, sticky="w", padx=5, pady=2)
@@ -88,7 +85,7 @@ class MainWindow(tk.Tk):
         frame = ttk.LabelFrame(self, text="Redes Wi-Fi Conocidas (Guardado automático)", padding=15)
         frame.pack(fill="x", padx=15, pady=5)
 
-        # Treeview para mostrar las redes
+        # Treeview to show networks
         tree_frame = ttk.Frame(frame)
         tree_frame.pack(fill="x", expand=True, pady=(0, 10))
         
@@ -104,7 +101,6 @@ class MainWindow(tk.Tk):
         self.network_tree.configure(yscrollcommand=scrollbar.set)
         scrollbar.pack(side="right", fill="y")
 
-        # Botones de gestión
         button_frame = ttk.Frame(frame)
         button_frame.pack(fill="x")
 
@@ -159,7 +155,6 @@ class MainWindow(tk.Tk):
         frame = ttk.LabelFrame(self, text="Dispositivos Conectados", padding=15)
         frame.pack(fill="x", padx=15, pady=(15, 5))
 
-        # Frame para el Treeview y el Scrollbar
         tree_frame = ttk.Frame(frame)
         tree_frame.pack(fill="both", expand=True)
 
@@ -178,7 +173,6 @@ class MainWindow(tk.Tk):
         self.device_tree.heading('logo_port', text='Puerto LOGO!')
         self.device_tree.heading('logo_status', text='Estado LOGO!')
 
-        # Ajuste de anchos de columna para que quepan en la ventana
         self.device_tree.column('name', width=80, stretch=tk.YES)
         self.device_tree.column('serial_number', width=120, stretch=tk.NO)
         self.device_tree.column('serial_port', width=110, anchor='center', stretch=tk.NO)
@@ -203,18 +197,15 @@ class MainWindow(tk.Tk):
 
     def update_device_list(self, devices):
         if not self.device_tree_tags_configured:
-            # Configurar tags de colores la primera vez
             self.device_tree.tag_configure('online', foreground='green')
             self.device_tree.tag_configure('offline', foreground='red')
             self.device_tree.tag_configure('evenrow', background='#f0f0f0')
             self.device_tree.tag_configure('oddrow', background='#ffffff')
             self.device_tree_tags_configured = True
 
-        # Limpiar la tabla antes de actualizar
         for i in self.device_tree.get_children():
             self.device_tree.delete(i)
 
-        # Llenar con los nuevos datos
         for i, device in enumerate(devices):
             row_tag = 'evenrow' if i % 2 == 0 else 'oddrow'
             tcp_ip = device.cc.get("tcpIp", "-")
@@ -227,12 +218,8 @@ class MainWindow(tk.Tk):
             status_text = "Online" if device.connected else "Offline"
             logo_status_text = "Online" if device.connected_logo else "Offline"
 
-            # Insertar valores y aplicar tags
             item_id = self.device_tree.insert('', 'end', values=(device.name, device.serial, serial_port, baudrate, slave_id, tcp_ip, tcp_port, status_text, logo_ip, logo_port, logo_status_text), tags=(row_tag,))
             
-            # Aplicar tags de color solo a las celdas de estado (esto requiere un workaround en Tkinter)
-            # La forma estándar de colorear celdas no existe, pero podemos re-insertar con tags.
-            # Esta implementación es más simple y colorea toda la fila, lo cual es aceptado.
 
     def _build_log_widget(self):
         """Crea el widget de texto para los logs."""
@@ -275,11 +262,11 @@ class NetworkDialog(simpledialog.Dialog):
         self.password_entry.grid(row=3, padx=5)
         self.password_entry.insert(0, self.password_initial)
 
-        return self.ssid_entry # initial focus
+        return self.ssid_entry
 
     def apply(self):
         ssid = self.ssid_entry.get().strip()
-        password = self.password_entry.get() # No quitamos espacios por si la clave los tiene
+        password = self.password_entry.get()
 
         if not ssid:
             messagebox.showerror("Error de validación", "El nombre de la red (SSID) no puede estar vacío.", parent=self)
@@ -290,7 +277,7 @@ class NetworkDialog(simpledialog.Dialog):
             if messagebox.askyesno("Sin Contraseña", "La contraseña está vacía. ¿Es una red abierta?", parent=self):
                  self.result = (ssid, "")
             else:
-                self.result = None # El usuario canceló
+                self.result = None 
             return
 
         self.result = (ssid, password)

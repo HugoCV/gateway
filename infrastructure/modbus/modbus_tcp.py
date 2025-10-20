@@ -3,7 +3,7 @@ from pymodbus.client import ModbusTcpClient
 
 class ModbusTcp(BaseModbusClient):
     def __init__(self, device, send_signal, log, ip, port, slave_id, modbus_cfg):
-        super().__init__(device, send_signal, log, slave_id, modbus_cfg)
+        super().__init__(device, send_signal, log, slave_id, modbus_cfg, "drive")
         self.ip = ip
         self.port = port
 

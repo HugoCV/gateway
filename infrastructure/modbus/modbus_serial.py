@@ -5,7 +5,7 @@ from pymodbus.client import ModbusSerialClient
 
 class ModbusSerial(BaseModbusClient):
     def __init__(self, device, send_signal, log, port, baudrate, slave_id, modbus_cfg):
-        super().__init__(device, send_signal, log, slave_id, modbus_cfg)
+        super().__init__(device, send_signal, log, slave_id, modbus_cfg, "drive")
         self.port = port
         self.baudrate = baudrate
 

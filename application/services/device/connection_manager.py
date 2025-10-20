@@ -1,7 +1,7 @@
 # connection_manager.py
 from infrastructure.modbus.modbus_tcp import ModbusTcp
 from infrastructure.modbus.modbus_serial import ModbusSerial
-from infrastructure.logo.logo_client import LogoModbusClient
+from infrastructure.modbus.modbus_logo import LogoModbusClient
 
 class ConnectionManager:
     """Manages per-device protocol clients (TCP, Serial, LOGO)."""

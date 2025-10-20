@@ -4,8 +4,9 @@ import threading, time, os, glob
 from serial.rs485 import RS485Settings
 
 class BaseModbusClient(ABC):
-    def __init__(self, device, send_signal, log, slave_id, modbus_cfg):
+    def __init__(self, device, send_signal, log, slave_id, modbus_cfg, signal_group):
         self.device = device
+        self.signal_group = signal_group
         self.log = log
         self.send_signal = send_signal
         self.slave_id = slave_id
@@ -24,7 +25,7 @@ class BaseModbusClient(ABC):
     # ---------------------------
     def start(self):
         if self._thread and self._thread.is_alive():
-            self.log("⚠️ Thread ya corriendo")
+            self.log("Thread ya corriendo")
             return
         self._stop_event.clear()
         self._thread = threading.Thread(target=self.auto_reconnect, daemon=True)
@@ -47,7 +48,7 @@ class BaseModbusClient(ABC):
                 self.device.update_connected()
                 self.start_reading()
                 break
-            self.log(f"❌ Reintentando conexión en {delay}s")
+            self.log(f"Reintentando conexión en {delay}s")
             self._stop_event.wait(delay)
         self._reconnecting = False
 
@@ -98,23 +99,44 @@ class BaseModbusClient(ABC):
         return getattr(self.client, "is_socket_open", lambda: False)() or getattr(self.client, "connected", False)
 
     def _build_signal_from_regs(self, read_regs):
+        """
+        Construye un diccionario de señales interpretadas a partir de los registros leídos.
+        Soporta mapeos de tipo {'valor': 'texto'} o {'valor': {'value': 'texto', 'kind': 'fault'}}.
+        """
         signal = {}
+
         for key, register in self.modbus_regs:
             addr = register.get("address")
             scale = register.get("scale", 1)
-            types = register.get("types")
+            types = register.get("types", {})
             value = read_regs.get(addr)
+
             if value is None:
                 signal[key] = {"value": None, "kind": "operation"}
                 continue
-            if scale:
+
+            # aplicar escala numérica
+            if scale and isinstance(value, (int, float)):
                 value *= scale
+
+            kind = "operation"
+
             if types:
-                value = types.get(str(value), f"Desconocido({value})")
-            signal[key] = {"value": value, "kind": "operation"}
+                mapped = types.get(str(int(value)))  
+                if isinstance(mapped, dict):
+                    value = mapped.get("value", f"Desconocido({value})")
+                    kind = mapped.get("kind", "operation")
+                elif isinstance(mapped, str):
+                    value = mapped
+                else:
+                    value = f"Desconocido({value})"
+
+            signal[key] = {"value": value, "kind": kind}
+
         return signal
+
 
     def _read_callback(self, regs):
         payload = self._build_signal_from_regs(regs)
         if payload:
-            self.send_signal(payload, "drive")
+            self.send_signal(payload, self.signal_group)
