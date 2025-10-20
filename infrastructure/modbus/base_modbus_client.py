@@ -115,7 +115,7 @@ class BaseModbusClient(ABC):
                 signal[key] = {"value": None, "kind": "operation"}
                 continue
 
-            # aplicar escala numérica
+            # Apply num scale
             if scale and isinstance(value, (int, float)):
                 value *= scale
 

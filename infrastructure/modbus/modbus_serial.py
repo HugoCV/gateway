@@ -12,7 +12,7 @@ class ModbusSerial(BaseModbusClient):
     def connect(self):
         ports = glob.glob(self.port)
         if not ports:
-            self.log("⚠️ No hay puertos disponibles")
+            self.log("No hay puertos disponibles")
             return False
         self.client = ModbusSerialClient(port=ports[0], baudrate=self.baudrate, timeout=1)
         if self.client.connect():
@@ -22,13 +22,13 @@ class ModbusSerial(BaseModbusClient):
                     transport.rs485_mode = RS485Settings(rts_level_for_tx=True, rts_level_for_rx=False)
             except Exception:
                 pass
-            self.log(f"✅ Conectado a {self.port} @ {self.baudrate}")
+            self.log(f"Conectado a {self.port} @ {self.baudrate}")
             return True
-        self.log("❌ No se pudo conectar serial")
+        self.log("No se pudo conectar serial")
         return False
 
     def disconnect(self):
         if self.client:
             self.client.close()
             self.client = None
-            self.log("⚠️ Serial desconectado")
+            self.log("Serial desconectado")

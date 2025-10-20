@@ -10,13 +10,13 @@ class ModbusTcp(BaseModbusClient):
     def connect(self):
         self.client = ModbusTcpClient(host=self.ip, port=self.port, timeout=1.0)
         if self.client.connect():
-            self.log(f"✅ Conectado a {self.ip}:{self.port}")
+            self.log(f"Conectado a {self.ip}:{self.port}")
             return True
-        self.log("❌ No se pudo conectar TCP")
+        self.log("No se pudo conectar TCP")
         return False
 
     def disconnect(self):
         if self.client:
             self.client.close()
             self.client = None
-            self.log("⚠️ TCP desconectado")
+            self.log("TCP desconectado")

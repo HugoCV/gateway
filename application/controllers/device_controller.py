@@ -5,7 +5,7 @@ class DeviceController:
         self.mqtt = mqtt_handler
         self.gateway_cfg = gateway_cfg
         self.log = log
-        self.window = window  # opcional, solo si querés refrescar UI directamente
+        self.window = window
         self.devices = {}
         self.services = []
 
@@ -17,7 +17,6 @@ class DeviceController:
         devices = devices or []
         total = len(devices)
 
-        # 🔻 Detener servicios anteriores
         if self.devices:
             self.log(f"🛑 Deteniendo {len(self.devices)} DeviceService anteriores...")
             for ds in self.devices.values():
@@ -26,7 +25,7 @@ class DeviceController:
                 except Exception as e:
                     self.log(f"⚠️ Error deteniendo DeviceService: {e}")
 
-        # 🔹 Crear nuevas instancias DeviceService
+        #Create new instances
         device_services = {}
         created = 0
         for dev in devices:
@@ -42,7 +41,7 @@ class DeviceController:
                 created += 1
             except Exception as e:
                 name = dev.get("name") or dev.get("serialNumber") or "desconocido"
-                self.log(f"❌ Error creando DeviceService para '{name}': {e}")
+                self.log(f"Error creando DeviceService para '{name}': {e}")
 
         # 🔸 Actualizar estado interno
         self.devices = device_services
@@ -53,17 +52,15 @@ class DeviceController:
             try:
                 self.window.update_device_list(self.services)
             except Exception as e:
-                self.log(f"⚠️ No se pudo actualizar la UI: {e}")
+                self.log(f"No se pudo actualizar la UI: {e}")
 
         # ✅ Log final
-        self.log(f"📡 DeviceService creados correctamente: {created}/{total}")
+        self.log(f"DeviceService creados correctamente: {created}/{total}")
 
     def handle_command(self, device_serial, command):
-        """Ejecuta comandos recibidos sobre un DeviceService."""
         ds = self.devices.get(device_serial)
-        print("DEVICE FOUND", ds)
         if not ds:
-            self.log(f"⚠️ Device {device_serial} no encontrado.")
+            self.log(f"Dispositivo {device_serial} no encontrado.")
             return
 
         action = command.get("action")
@@ -79,4 +76,4 @@ class DeviceController:
                 elif value == "off": ds.turn_off()
                 elif value == "restart": ds.restart()
             case _:
-                self.log(f"⚙️ Unknown device command: {action}")
+                self.log(f"Dispositivo desconocido: {action}")
