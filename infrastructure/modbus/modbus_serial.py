@@ -1,7 +1,7 @@
 import glob
 from infrastructure.modbus.base_modbus_client import BaseModbusClient
 from pymodbus.client import ModbusSerialClient
-
+from serial.rs485 import RS485Settings
 
 class ModbusSerial(BaseModbusClient):
     def __init__(self, device, send_signal, log, port, baudrate, slave_id, modbus_cfg):

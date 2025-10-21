@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 from pymodbus.client import ModbusTcpClient, ModbusSerialClient
-import threading, time, os, glob
+import threading
 from serial.rs485 import RS485Settings
 
 class BaseModbusClient(ABC):
