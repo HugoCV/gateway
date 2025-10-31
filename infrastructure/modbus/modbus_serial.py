@@ -40,7 +40,7 @@ DEVICE = {
 }
 
 STATUS_TYPES_DIR = {0: "stop", 1: "fault", 2: "run", 7:"run"}
-DIR_TYPE_DIR = {4: "reverse", 1: "stop", 129: "auto", 130: "fwd", 193: "acc", 194: "fwd", 66:"fwd"}
+DIR_TYPE_DIR = {4: "reverse", 1: "stop", 129: "auto", 130: "fwd", 193: "acc", 194: "fwd", 66:"fwd", 65:"stop"}
 
 
 class ModbusSerial:
