@@ -1,17 +1,17 @@
 {
-  "organizationId": "68784d9492ad8045bc7b1680",
-  "gatewayId": "68784d9592ad8045bc7b16b3",
+  "organizationId": "sdfsdf",
+  "gatewayId": "68784d9592ad8045bc7b16ae",
   "known_networks": {
     "WTP": "Ap2302#2006"
   },
-  "_id": "68784d9592ad8045bc7b16b3",
-  "name": "coto-brus-puerta-enlace",
-  "location": "Costa Rica - Coto Brus",
+  "_id": "68784d9592ad8045bc7b16ae",
+  "name": "perez-zeledon-puerta-enlace",
+  "location": "Costa Rica - Pérez Zeledón",
   "metadata": {
     "seeded": true
   },
   "createdAt": "2025-07-17T01:10:45.417Z",
-  "updatedAt": "2025-10-20T16:53:53.482Z",
+  "updatedAt": "2025-10-30T05:35:47.634Z",
   "__v": 0,
   "status": "offline"
 }

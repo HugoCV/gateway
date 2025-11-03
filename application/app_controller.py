@@ -116,6 +116,29 @@ class AppController:
             self.log(f"❌ Error al guardar la configuración: {e}")
 
 
+    def on_add_network(self, ssid, password):
+        networks = self.gateway_cfg.get("known_networks", {})
+        if ssid in networks:
+            self.log(f"⚠️ La red '{ssid}' ya existe. Use 'Editar' para modificarla.")
+            return
+        networks[ssid] = password
+        self._update_and_save_networks(networks)
+
+    def on_edit_network(self, old_ssid, new_ssid, new_password):
+        networks = self.gateway_cfg.get("known_networks", {})
+        if old_ssid != new_ssid and new_ssid in networks:
+            self.log(f"⚠️ Ya existe una red con el nombre '{new_ssid}'.")
+            return
+        if old_ssid in networks:
+            del networks[old_ssid]
+        networks[new_ssid] = new_password
+        self._update_and_save_networks(networks)
+
+    def on_remove_network(self, ssid):
+        networks = self.gateway_cfg.get("known_networks", {})
+        if ssid in networks:
+            del networks[ssid]
+            self._update_and_save_networks(networks)
 
     def on_initial_load(self):
         """Load gateway and devices after MQTT connects."""

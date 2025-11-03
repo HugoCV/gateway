@@ -16,9 +16,11 @@ class ConnectionManager:
     def create_connections(self, cc: dict, modbus_cfg: dict):
         """Initialize only the required connections based on defaultReader."""
         try:
+            print("default reader", cc)
             default_reader = cc.get("defaultReader")
+            print("llega", modbus_cfg)
             proto = modbus_cfg.get("protocol") or modbus_cfg.get("connection")
-
+            print(default_reader, proto)
             if default_reader == "serial" or proto in ("modbus-rtu", "serial"):
                 self.serial = ModbusSerial(
                     self.device, self.send_signal, self.log,
