@@ -106,7 +106,7 @@ class AppController:
         self.window.update_known_networks_list(networks)
         
         # Actualizar el monitor de conectividad con las nuevas redes en tiempo real
-        self.connectivity_monitor.known_networks = networks
+        self.connectivity.known_networks = networks
         self.log("ℹ️ Lista de redes Wi-Fi actualizada.")
 
     def refresh_device_list(self, devices=None):
