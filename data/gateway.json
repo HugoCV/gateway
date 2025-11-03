@@ -2,7 +2,8 @@
   "organizationId": "sdfsdf",
   "gatewayId": "68784d9592ad8045bc7b16ae",
   "known_networks": {
-    "WTP": "Ap2302#2006"
+    "WTP": "Ap2302#2006",
+    "test": "tester"
   },
   "_id": "68784d9592ad8045bc7b16ae",
   "name": "perez-zeledon-puerta-enlace",

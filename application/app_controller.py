@@ -95,6 +95,20 @@ class AppController:
     #     if self.window:
     #         self.window.update_device_list(self.services)
     #     self.log(f"📡 Devices loaded: {len(self.devices)}")
+
+    def _update_and_save_networks(self, networks):
+        """Actualiza las redes en la config, UI, monitor y guarda el archivo."""
+        current_config = get_gateway()
+        current_config["known_networks"] = networks
+        save_gateway(current_config)
+
+        self.gateway_cfg = current_config
+        self.window.update_known_networks_list(networks)
+        
+        # Actualizar el monitor de conectividad con las nuevas redes en tiempo real
+        self.connectivity_monitor.known_networks = networks
+        self.log("ℹ️ Lista de redes Wi-Fi actualizada.")
+
     def refresh_device_list(self, devices=None):
         if not devices:
             self.log("⚠️ Lista de dispositivos vacía.")
