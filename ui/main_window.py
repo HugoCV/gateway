@@ -104,26 +104,27 @@ class MainWindow(tk.Tk):
         button_frame = ttk.Frame(frame)
         button_frame.pack(fill="x")
 
-        add_button = ttk.Button(button_frame, text="Añadir", command=self._add_or_edit_network_dialog)
+        add_button = ttk.Button(button_frame, text="Añadir", command=self._add_network_dialog)
         add_button.pack(side="left", padx=5)
 
-        edit_button = ttk.Button(button_frame, text="Editar", command=lambda: self._add_or_edit_network_dialog(edit=True))
+        edit_button = ttk.Button(button_frame, text="Editar", command=lambda: self._edit_network_dialog)
         edit_button.pack(side="left", padx=5)
 
         remove_button = ttk.Button(button_frame, text="Eliminar", command=self._remove_network)
         remove_button.pack(side="left", padx=5)
 
-    def _add_or_edit_network_dialog(self, edit=False):
+    def _edit_network(self, edit=False):
+        selected_item = self.network_tree.selection()
+        if not selected_item:
+            messagebox.showwarning("Selección requerida", "Por favor, selecciona una red para editar.")
+            return
+        item_values = self.network_tree.item(selected_item[0], 'values')
+        ssid = item_values[0]
+
+
+    def _add_network_dialog(self, edit=False):
         """Abre un diálogo para añadir o editar una red Wi-Fi."""
         ssid, password = "", ""
-        if edit:
-            selected_item = self.network_tree.selection()
-            if not selected_item:
-                messagebox.showwarning("Selección requerida", "Por favor, selecciona una red para editar.")
-                return
-            item_values = self.network_tree.item(selected_item[0], 'values')
-            ssid = item_values[0]
-
         dialog = NetworkDialog(self, title="Editar Red" if edit else "Añadir Red", ssid_initial=ssid, password_initial="")
         if dialog.result:
             new_ssid, new_password = dialog.result

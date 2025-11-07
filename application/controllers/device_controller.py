@@ -35,7 +35,7 @@ class DeviceController:
                     gateway_cfg=self.gateway_cfg,
                     device=dev,
                     log=self.log,
-                    update_fields=None,  # Ya no se usa directamente
+                    update_fields=None,
                 )
                 device_services[ds.serial] = ds
                 created += 1

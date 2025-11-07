@@ -62,6 +62,42 @@ class AppController:
             self.window.org_id_var.set(gateway.get("organizationId", ""))
             self.window.gw_id_var.set(gateway.get("_id", ""))
 
+
+    # ---------------------------
+    # Device Refresh Callback
+    # ---------------------------
+    # def refresh_device_list(self, devices=None):
+    #     """
+    #     Called by DeviceManager when devices list changes.
+    #     Rebuilds DeviceService instances and updates UI.
+    #     """
+    #     if not devices:
+    #         devices = []
+
+    #     # Detener servicios anteriores
+    #     for ds in getattr(self, "devices", {}).values():
+    #         ds.stop()
+
+    #     device_services = {}
+    #     for dev in devices:
+    #         try:
+    #             ds = DeviceService(
+    #                 mqtt_handler=self.mqtt_handler,
+    #                 gateway_cfg=self.gateway_cfg,
+    #                 device=dev,
+    #                 log=self.log,
+    #                 update_fields=None  # Opcional, ya no se usa
+    #             )
+    #             device_services[ds.serial] = ds
+    #         except Exception as e:
+    #             self.log(f"❌ Error creando DeviceService para {dev.get('name')}: {e}")
+
+    #     self.devices = device_services
+    #     self.services = list(self.devices.values())
+
+    #     if self.window:
+    #         self.window.update_device_list(self.services)
+    #     self.log(f"📡 Devices loaded: {len(self.devices)}")
     def refresh_device_list(self, devices=None):
         if not devices:
             self.log("⚠️ Lista de dispositivos vacía.")
@@ -87,6 +123,8 @@ class AppController:
             os.execv(sys.executable, [sys.executable] + sys.argv)
         except Exception as e:
             self.log(f"❌ Error al guardar la configuración: {e}")
+
+
 
     def on_initial_load(self):
         self.log("📥 Loading gateway and devices...")
