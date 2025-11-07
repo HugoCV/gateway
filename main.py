@@ -17,33 +17,40 @@ except Exception as e:
 
 def run_headless():
     """
-    Ejecuta la lógica sin GUI (para uso con systemd).
+    Run the application without GUI (used for systemd / Docker).
     """
     stop_event = Event()
 
     def _graceful(signum, _):
-        print(f"[headless] señal {signum} recibida, saliendo…")
+        print(f"[headless] Signal {signum} received, shutting down…")
         stop_event.set()
 
+    # Handle graceful shutdown signals (Docker, systemd, Ctrl+C)
     signal.signal(signal.SIGTERM, _graceful)
     signal.signal(signal.SIGINT, _graceful)
 
     if AppController is None:
-        print("[headless] AppController no disponible, bucle dummy.")
+        print("[headless] AppController not available, running dummy loop.")
         try:
             while not stop_event.is_set():
                 time.sleep(0.5)
         finally:
-            print("[headless] terminado.")
+            print("[headless] Stopped.")
         return
 
-    ctrl = AppController(ui=None)  # sin GUI
+    # Initialize controller (this should start background logic/threads)
+    ctrl = AppController(window=None)
+
+    # Keep process alive until a stop signal is received
     try:
-        ctrl.run(stop_event=stop_event)  # método bloqueante
+        while not stop_event.is_set():
+            time.sleep(0.5)
     finally:
-        if hasattr(ctrl, "close"):
-            ctrl.close()
-        print("[headless] shutdown completo.")
+        print("[headless] Stopped. Calling controller shutdown...")
+        if hasattr(ctrl, "shutdown"):
+            ctrl.shutdown()
+
+
 
 
 def run_gui():

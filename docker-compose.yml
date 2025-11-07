@@ -1,0 +1,26 @@
+services:
+  gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: gateway
+    restart: always
+    env_file: .env
+    environment:
+      APP_MODE: headless
+    working_dir: /app
+    command: ["python", "main.py", "--mode", "headless"]
+
+  gateway-dev:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: gateway-dev
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      APP_MODE: headless
+    working_dir: /app
+    command: ["python", "main.py", "--mode", "headless"]
+    volumes:
+      - .:/app

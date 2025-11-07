@@ -1,0 +1,31 @@
+# Ignore Python cache files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Ignore virtual environments
+venv/
+.venv/
+
+# Ignore environment variables files
+.env
+
+# Ignore local data folders (you will mount them as volumes if needed)
+data/
+
+# Ignore test folders
+test/
+
+# Ignore simulator folder if it's only for local testing
+simulator/
+
+# Ignore UI files if they are not part of the containerized backend
+ui/
+
+# Ignore git and build-related files
+.git/
+.gitignore
+*.log
+dist/
+build/
