@@ -16,6 +16,14 @@ GATEWAY_PATH = os.path.join(DATA_DIR, "gateway.json")
 _gateway_cache = None
 
 
+def _env_int(name: str, default: str) -> int:
+    value = os.getenv(name, default)
+    try:
+        return int(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{name} must be an integer, got {value!r}") from exc
+
+
 # -----------------------------
 # Environment & Config Loading
 # -----------------------------
@@ -34,11 +42,11 @@ def load_config():
     load_env()
     return {
         "MQTT_HOST": os.getenv("MQTT_HOST", "localhost"),
-        "MQTT_PORT": int(os.getenv("MQTT_PORT", "1883")),
+        "MQTT_PORT": _env_int("MQTT_PORT", "1883"),
         "MQTT_USER": os.getenv("MQTT_USER", ""),
         "MQTT_PASS": os.getenv("MQTT_PASS", ""),
         "PORT": os.getenv("RS485_PORT", ""), 
-        "BAUDRATE": int(os.getenv("RS485_BAUD", "9600")),
+        "BAUDRATE": _env_int("RS485_BAUD", "9600"),
     }
 
 

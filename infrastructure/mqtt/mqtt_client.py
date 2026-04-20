@@ -14,7 +14,7 @@ from infrastructure.config.loader import load_config
 cfg = load_config()
 
 MQTT_HOST = cfg["MQTT_HOST"]
-MQTT_PORT = int(cfg["MQTT_PORT"])
+MQTT_PORT = cfg["MQTT_PORT"]
 MQTT_USER = cfg.get("MQTT_USER")
 MQTT_PASS = cfg.get("MQTT_PASS")
 
