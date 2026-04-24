@@ -218,6 +218,9 @@ class ModbusSerial:
         if not self.client:
             self.log("⚠️ Client not connected")
             return None
+
+        self.log("address": address)
+        self.log("count": count)
         with self._lock:
             try:
                 rr = self.client.read_holding_registers(address, count=count, device_id=self.slave_id)
