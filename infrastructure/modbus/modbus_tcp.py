@@ -62,6 +62,28 @@ class ModbusTcp:
         self._thread: threading.Thread | None = None
         self._reconnecting = False
 
+    def _get_signal_map(self) -> dict[str, int]:
+        modbus_config = getattr(self.device, "device", {}).get("modbusConfig")
+        if not isinstance(modbus_config, dict):
+            return SIGNAL_MODBUS_TCP_DIR
+
+        if modbus_config.get("protocol") != "modbus-tcp":
+            return SIGNAL_MODBUS_TCP_DIR
+
+        config_map = modbus_config.get("registers")
+        if not isinstance(config_map, dict):
+            return SIGNAL_MODBUS_TCP_DIR
+
+        registers: dict[str, int] = {}
+        for key, value in config_map.items():
+            try:
+                address = value.get("address") if isinstance(value, dict) else value
+                registers[str(key)] = int(address)
+            except (TypeError, ValueError):
+                self.log(f"⚠️ Registro TCP inválido para {key}: {value}")
+
+        return registers or SIGNAL_MODBUS_TCP_DIR
+
     # ---------------------------
     # Ciclo de vida
     # ---------------------------
@@ -151,7 +173,8 @@ class ModbusTcp:
     def start_reading(self):
         if not self.is_connected():
             return
-        addrs = list(dict.fromkeys(SIGNAL_MODBUS_TCP_DIR.values()))
+        signal_map = self._get_signal_map()
+        addrs = list(dict.fromkeys(signal_map.values()))
         self.tcp_poll = self.poll_registers(addresses=addrs, interval=self.poll_interval)
 
     def poll_registers(self, addresses: list[int], interval: float = 0.5):
@@ -308,7 +331,7 @@ class ModbusTcp:
         return s
 
     def _read_callback(self, regs):
-        signal = self._build_signal_from_regs(regs, SIGNAL_MODBUS_TCP_DIR)
+        signal = self._build_signal_from_regs(regs, self._get_signal_map())
         payload = {k: v for k, v in signal.items() if v is not None}
         if payload:
             self.send_signal(payload, "drive")
