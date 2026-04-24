@@ -202,6 +202,8 @@ class ModbusTcp:
             self.log("⚠️ Client not connected. Call connect() first.")
             return None
         with self._lock:
+            self.log(f"address: {address}")
+            self.log(f"count: {count}")
             try:
                 rr = self.client.read_holding_registers(address, count=count)
                 if rr and not rr.isError():
