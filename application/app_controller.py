@@ -72,10 +72,10 @@ class AppController:
                     ds.update_connection_config(command["params"])
             case "update-status":
                 value = str(command.get("params", {}).get("value", "")).lower()
-                if value == "on":
+                if value in {"on", "online"}:
                     self.log(f"El dispositivo {ds.name} se mandó a encender")
                     ds.turn_on()
-                elif value == "off":
+                elif value in {"off", "offline"}:
                     self.log(f"El dispositivo {ds.name} se mandó a apagar")
                     ds.turn_off()
                 elif value == "restart":
