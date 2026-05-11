@@ -40,8 +40,9 @@ DIR_TYPE_DIR = {
 }
 
 DEVICE = {
-    "status": {"address": 987, "values": {"on": 0, "off": 3}},
+    "status": {"address": 898, "values": {"on": 3, "off": 0, "run": 2}},
     "mode": {"address": 4358, "values": {"local": 2, "remote": 4}},
+    "restart": {"address": 901, "values": {"on": 1, "off": 0}},
 }
 
 
@@ -83,6 +84,34 @@ class ModbusTcp:
                 self.log(f"⚠️ Registro TCP inválido para {key}: {value}")
 
         return registers or SIGNAL_MODBUS_TCP_DIR
+
+    def _get_command(self, name: str):
+        modbus_config = getattr(self.device, "device", {}).get("modbusConfig")
+        if isinstance(modbus_config, dict) and modbus_config.get("protocol") == "modbus-tcp":
+            commands = modbus_config.get("commands")
+            if isinstance(commands, dict) and isinstance(commands.get(name), dict):
+                return commands[name]
+        return DEVICE.get(name)
+
+    def _write_command_value(self, command_name: str, value_name: str) -> bool:
+        command = self._get_command(command_name)
+        if not isinstance(command, dict):
+            self.log(f"⚠️ Comando TCP no configurado: {command_name}")
+            return False
+
+        values = command.get("values")
+        if not isinstance(values, dict) or value_name not in values:
+            self.log(f"⚠️ Valor TCP no configurado: {command_name}.{value_name}")
+            return False
+
+        try:
+            address = int(command["address"])
+            value = int(values[value_name])
+        except (KeyError, TypeError, ValueError):
+            self.log(f"⚠️ Comando TCP inválido: {command_name}.{value_name}")
+            return False
+
+        return self.write_register(address, value)
 
     # ---------------------------
     # Ciclo de vida
@@ -274,33 +303,31 @@ class ModbusTcp:
     # ---------------------------
     def turn_on(self) -> bool:
         self.set_remote()
-        return self.write_register(address=898, value=3)
+        return self._write_command_value("status", "on")
 
     def turn_off(self) -> bool:
         self.set_remote()
-        is_turned_off = self.write_register(address=898, value=0)
+        is_turned_off = self._write_command_value("status", "off")
         self.set_local()
         return is_turned_off
 
     def restart(self):
         if not self.client:
-            return
-        self.write_register(address=901, value=1)
-        self.write_register(address=901, value=0)
-        self.write_register(address=898, value=2)
+            return False
+        ok = self._write_command_value("restart", "on")
+        self._write_command_value("restart", "off")
+        if not self._write_command_value("status", "run"):
+            self.turn_on()
         self.log("✔ Comando enviado: RESET")
+        return ok
 
     def set_local(self) -> bool:
-        ok = self.write_register(
-            address=DEVICE["mode"]["address"], value=DEVICE["mode"]["values"]["local"]
-        )
+        ok = self._write_command_value("mode", "local")
         self.log("✅ Puesto en local" if ok else "❌ No se pudo poner en local")
         return ok
 
     def set_remote(self) -> bool:
-        ok = self.write_register(
-            address=DEVICE["mode"]["address"], value=DEVICE["mode"]["values"]["remote"]
-        )
+        ok = self._write_command_value("mode", "remote")
         self.log("✅ Puesto en remoto" if ok else "❌ No se pudo poner en remoto")
         return ok
 

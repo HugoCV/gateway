@@ -36,6 +36,10 @@ DEVICE = {
     "mode": {
         "address": 4357,
         "values": {"local": 2, "remote": 3}
+    },
+    "restart": {
+        "address": 900,
+        "values": {"on": 1, "off": 0}
     }
 }
 
@@ -84,6 +88,34 @@ class ModbusSerial:
                 self.log(f"⚠️ Registro serial inválido para {key}: {value}")
 
         return registers or SIGNAL_MODBUS_SERIAL_DIR
+
+    def _get_command(self, name: str):
+        modbus_config = getattr(self.device, "device", {}).get("modbusConfig")
+        if isinstance(modbus_config, dict) and modbus_config.get("protocol") == "modbus-rtu":
+            commands = modbus_config.get("commands")
+            if isinstance(commands, dict) and isinstance(commands.get(name), dict):
+                return commands[name]
+        return DEVICE.get(name)
+
+    def _write_command_value(self, command_name: str, value_name: str) -> bool:
+        command = self._get_command(command_name)
+        if not isinstance(command, dict):
+            self.log(f"⚠️ Comando serial no configurado: {command_name}")
+            return False
+
+        values = command.get("values")
+        if not isinstance(values, dict) or value_name not in values:
+            self.log(f"⚠️ Valor serial no configurado: {command_name}.{value_name}")
+            return False
+
+        try:
+            address = int(command["address"])
+            value = int(values[value_name])
+        except (KeyError, TypeError, ValueError):
+            self.log(f"⚠️ Comando serial inválido: {command_name}.{value_name}")
+            return False
+
+        return self.write_register(address, value)
 
     # ---------------------------
     # Ciclo de vida
@@ -268,15 +300,16 @@ class ModbusSerial:
         return False
 
     def restart(self):
-        self.write_register(900, 1)
-        self.write_register(900, 0)
+        ok = self._write_command_value("restart", "on")
+        self._write_command_value("restart", "off")
         self.turn_on()
+        return ok
 
     def turn_on(self) -> bool:
-        return self.write_register(DEVICE["status"]["address"], DEVICE["status"]["values"]["on"])
+        return self._write_command_value("status", "on")
 
     def turn_off(self) -> bool:
-        return self.write_register(DEVICE["status"]["address"], DEVICE["status"]["values"]["off"])
+        return self._write_command_value("status", "off")
 
     def _build_signal_from_regs(self, regs: dict[int, int], modbus_dir) -> dict:
         s = {}
@@ -296,12 +329,12 @@ class ModbusSerial:
         return s
 
     def set_local(self) -> bool:
-        ok = self.write_register(DEVICE["mode"]["address"], DEVICE["mode"]["values"]["local"])
+        ok = self._write_command_value("mode", "local")
         self.log("✅ Puesto en local" if ok else "❌ No se pudo poner en local")
         return ok
 
     def set_remote(self) -> bool:
-        ok = self.write_register(DEVICE["mode"]["address"], DEVICE["mode"]["values"]["remote"])
+        ok = self._write_command_value("mode", "remote")
         self.log("✅ Puesto en remoto" if ok else "❌ No se pudo poner en remoto")
         return ok
 
@@ -334,8 +367,8 @@ class ModbusSerial:
             changed = True
 
         if changed:
-            self.log(f"🔄 Updating TCP config: {self.baudrate}:{self.port}, slave={self.slave_id}")
-            self.stop_reconnect()
+            self.log(f"🔄 Updating serial config: {self.baudrate}:{self.port}, slave={self.slave_id}")
+            self.stop()
             self.start()
             return True
 

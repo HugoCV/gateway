@@ -53,12 +53,12 @@ class AppController:
     # === commands ===
     def on_receive_gateway_command(self, command):
         print("on_receive_gateway_command", command)
-        
-        match command["action"]:
-            case "restart":
-                os.execv(sys.executable, [sys.executable] + sys.argv)
-            case "restart-gateway":
-                print("restart")
+
+        action = command.get("action")
+        if action == "restart":
+            os.execv(sys.executable, [sys.executable] + sys.argv)
+        elif action == "restart-gateway":
+            print("restart")
 
     
     def on_receive_command(self, device_serial, command):
@@ -67,22 +67,22 @@ class AppController:
         if not (ds := self.devices.get(device_serial)):
                     self.window._log("⚠️ No device selected.")
                     return    
-        match command["action"]:
-            case "update-connections":
-                    ds.update_connection_config(command["params"])
-            case "device-command":
-                value = str(command.get("params", {}).get("command", "")).lower()
-                if value == "turnon":
-                    self.log(f"El dispositivo {ds.name} se mandó a encender")
-                    ds.turn_on()
-                elif value == "turnoff":
-                    self.log(f"El dispositivo {ds.name} se mandó a apagar")
-                    ds.turn_off()
-                elif value == "restart":
-                    self.log(f"El dispositivo {ds.name} se mandó a reiniciar")
-                    ds.restart()
-            case "update-config":
-                print("update-config", command["params"]["value"], "device_serial", device_serial)
+        action = command.get("action")
+        if action == "update-connections":
+            ds.update_connection_config(command["params"])
+        elif action == "device-command":
+            value = str(command.get("params", {}).get("command", "")).lower()
+            if value == "turnon":
+                self.log(f"El dispositivo {ds.name} se mandó a encender")
+                ds.turn_on()
+            elif value == "turnoff":
+                self.log(f"El dispositivo {ds.name} se mandó a apagar")
+                ds.turn_off()
+            elif value == "restart":
+                self.log(f"El dispositivo {ds.name} se mandó a reiniciar")
+                ds.restart()
+        elif action == "update-config":
+            print("update-config", command["params"]["value"], "device_serial", device_serial)
         
     # === initial load ===
     def on_initial_load(self):
