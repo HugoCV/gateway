@@ -104,7 +104,7 @@ class MqttClient:
 
     # ---------- Connection ----------
     def connect(self) -> None:
-        """Configura el cliente, TLS/LWT y activa auto-reconnect en background."""
+        """Configure the client, TLS/LWT, and background auto-reconnect."""
         broker = MQTT_HOST
         port = MQTT_PORT
         if not broker:

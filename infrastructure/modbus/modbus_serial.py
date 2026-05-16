@@ -62,7 +62,7 @@ class ModbusSerial:
         self.baudrate = baudrate
         self.slave_id = slave_id
 
-        # Control de hilos
+        # Thread control
         self._stop_event = threading.Event()
         self._thread: threading.Thread | None = None
         self._reconnecting = False
@@ -118,10 +118,10 @@ class ModbusSerial:
         return self.write_register(address, value)
 
     # ---------------------------
-    # Ciclo de vida
+    # Lifecycle
     # ---------------------------
     def start(self):
-        """Inicia el hilo de auto_reconnect si no está corriendo."""
+        """Start the auto_reconnect thread if it is not already running."""
         if self._thread and self._thread.is_alive():
             self.log("⚠️ ModbusSerial: ya hay un hilo corriendo")
             return
@@ -131,16 +131,16 @@ class ModbusSerial:
         self._thread.start()
 
     def stop(self):
-        """Detiene el loop de reconnect y cierra la conexión."""
+        """Stop the reconnect loop and close the connection."""
         self.log("⏹️ STOP Modbus Serial")
         self._stop_event.set()
         if self._thread and self._thread.is_alive():
-            if threading.current_thread() != self._thread:  # evita self-join
+            if threading.current_thread() != self._thread:  # avoid self-join
                 self._thread.join(timeout=1)
         self.disconnect()
 
     def auto_reconnect(self, delay=5.0):
-        """Loop de reconexión automática."""
+        """Automatic reconnection loop."""
         if self._reconnecting:
             self.log("⚠️ auto_reconnect ya en curso, no se lanza otro")
             return
@@ -161,10 +161,10 @@ class ModbusSerial:
         self._reconnecting = False
 
     # ---------------------------
-    # Conexión
+    # Connection
     # ---------------------------
     def connect(self, timeout: float = 1.0) -> bool:
-        """Abre la conexión Modbus RTU sobre un puerto serie."""
+        """Open the Modbus RTU connection over a serial port."""
         try:
             available_ports = glob.glob(self.port)
             if not available_ports:
@@ -212,7 +212,7 @@ class ModbusSerial:
             return False
 
     def disconnect(self):
-        """Cierra la conexión Modbus/serial."""
+        """Close the Modbus/serial connection."""
         if self.client:
             try:
                 self.client.close()
@@ -223,7 +223,7 @@ class ModbusSerial:
                 self.client = None
 
     # ---------------------------
-    # Polling de registros
+    # Register polling
     # ---------------------------
     def poll_registers(self, addresses: list[int], interval: float = 0.5):
         def _poll():
@@ -245,7 +245,7 @@ class ModbusSerial:
                 if failure_count >= 3:
                     self.log("⚠️ Modbus serial parece desconectado")
                     self.device.update_connected()
-                    self.start()  # relanza auto_reconnect
+                    self.start()  # relaunch auto_reconnect
                     return
 
                 self._stop_event.wait(interval)
@@ -256,7 +256,7 @@ class ModbusSerial:
         return thread
 
     # ---------------------------
-    # Utilidades
+    # Utilities
     # ---------------------------
     def is_connected(self) -> bool:
         if not self.client:

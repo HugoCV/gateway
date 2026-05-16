@@ -6,7 +6,7 @@ import argparse
 from threading import Event
 import traceback
 
-# Intentar importar el controlador principal de la lógica
+# Try to import the main logic controller
 try:
     from application.app_controller import AppController
 except Exception as e:
@@ -17,7 +17,7 @@ except Exception as e:
 
 def run_headless():
     """
-    Ejecuta la lógica sin GUI (para uso con systemd).
+    Run the app logic without a GUI for systemd usage.
     """
     stop_event = Event()
 
@@ -37,9 +37,9 @@ def run_headless():
             print("[headless] terminado.")
         return
 
-    ctrl = AppController(ui=None)  # sin GUI
+    ctrl = AppController(ui=None)  # without GUI
     try:
-        ctrl.run(stop_event=stop_event)  # método bloqueante
+        ctrl.run(stop_event=stop_event)  # blocking method
     finally:
         if hasattr(ctrl, "close"):
             ctrl.close()
@@ -48,7 +48,7 @@ def run_headless():
 
 def run_gui():
     """
-    Ejecuta la interfaz Tkinter.
+    Run the Tkinter UI.
     """
     from ui.main_window import MainWindow
     app = MainWindow()
@@ -60,7 +60,7 @@ def main():
     parser.add_argument(
         "--mode",
         choices=["gui", "headless"],
-        default=os.getenv("APP_MODE", "gui")  # por defecto GUI si no se define
+        default=os.getenv("APP_MODE", "gui")  # default to GUI if not configured
     )
     args = parser.parse_args()
 
@@ -68,7 +68,7 @@ def main():
         try:
             run_gui()
         except Exception as e:
-            # fallback: si no hay DISPLAY, intenta headless
+            # Fallback to headless mode when DISPLAY is not available.
             if "no display name and no $display" in str(e).lower():
                 print("[main] No hay DISPLAY → cambiando a modo headless")
                 run_headless()

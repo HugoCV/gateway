@@ -25,7 +25,7 @@ class MainWindow(tk.Tk):
         )
         self.style.configure("Treeview.Heading", font=("Segoe UI", 10, "bold"))
 
-        # Tags para colores en el Treeview
+        # Treeview color tags
         self.style.configure("Treeview",
             background="#ffffff",
             fieldbackground="#ffffff",
@@ -44,7 +44,7 @@ class MainWindow(tk.Tk):
         self.controller = AppController(self)
 
     def _build_gateway_config_widget(self):
-        """Crea el widget para la configuración del gateway."""
+        """Create the gateway configuration widget."""
         frame = ttk.LabelFrame(self, text="Configuración de Gateway", padding=15)
         frame.pack(fill="x", padx=15, pady=(15, 5))
 
@@ -61,34 +61,34 @@ class MainWindow(tk.Tk):
         ttk.Entry(frame, textvariable=self.gw_id_var).grid(row=1, column=1, sticky="ew", padx=5, pady=5)
 
         # Save Button
-        # El command se asignará en el controller
+        # The command is assigned in the controller.
         save_button = ttk.Button(frame, text="Guardar y Reiniciar", command=lambda: self.controller.on_save_gateway_config())
         save_button.grid(row=2, column=1, sticky="e", padx=5, pady=10)
 
     def _build_connectivity_widget(self):
-        """Crea el widget para mostrar el estado de la conectividad."""
+        """Create the connectivity status widget."""
         frame = ttk.LabelFrame(self, text="Estado de la Conexión", padding=15)
         frame.pack(fill="x", padx=15, pady=5)
 
         frame.columnconfigure(1, weight=1)
 
-        # Estado de la conexión
+        # Connection status
         ttk.Label(frame, text="Internet:").grid(row=0, column=0, sticky="w", padx=5, pady=2)
         self.conn_status_var = tk.StringVar(value="Verificando...")
         self.conn_status_label = ttk.Label(frame, textvariable=self.conn_status_var, font=("Segoe UI", 10, "bold"))
         self.conn_status_label.grid(row=0, column=1, sticky="w", padx=5, pady=2)
 
-        # Red actual
+        # Current network
         ttk.Label(frame, text="Red Wi-Fi:").grid(row=1, column=0, sticky="w", padx=5, pady=2)
         self.conn_network_var = tk.StringVar(value="-")
         ttk.Label(frame, textvariable=self.conn_network_var).grid(row=1, column=1, sticky="w", padx=5, pady=2)
 
     def _build_known_networks_widget(self):
-        """Crea el widget para gestionar las redes Wi-Fi conocidas."""
+        """Create the known Wi-Fi networks management widget."""
         frame = ttk.LabelFrame(self, text="Redes Wi-Fi Conocidas (Guardado automático)", padding=15)
         frame.pack(fill="x", padx=15, pady=5)
 
-        # Treeview para mostrar las redes
+        # Treeview for displaying networks
         tree_frame = ttk.Frame(frame)
         tree_frame.pack(fill="x", expand=True, pady=(0, 10))
         
@@ -104,7 +104,7 @@ class MainWindow(tk.Tk):
         self.network_tree.configure(yscrollcommand=scrollbar.set)
         scrollbar.pack(side="right", fill="y")
 
-        # Botones de gestión
+        # Management buttons
         button_frame = ttk.Frame(frame)
         button_frame.pack(fill="x")
 
@@ -118,7 +118,7 @@ class MainWindow(tk.Tk):
         remove_button.pack(side="left", padx=5)
 
     def _add_or_edit_network_dialog(self, edit=False):
-        """Abre un diálogo para añadir o editar una red Wi-Fi."""
+        """Open a dialog for adding or editing a Wi-Fi network."""
         ssid, password = "", ""
         if edit:
             selected_item = self.network_tree.selection()
@@ -137,7 +137,7 @@ class MainWindow(tk.Tk):
                 self.controller.on_add_network(new_ssid, new_password)
 
     def _remove_network(self):
-        """Elimina la red seleccionada de la lista."""
+        """Remove the selected network from the list."""
         selected_item = self.network_tree.selection()
         if not selected_item:
             messagebox.showwarning("Selección requerida", "Por favor, selecciona una red para eliminar.")
@@ -148,18 +148,18 @@ class MainWindow(tk.Tk):
             self.controller.on_remove_network(ssid)
 
     def update_known_networks_list(self, networks: Dict[str, str]):
-        """Actualiza la lista de redes conocidas en la UI."""
+        """Update the known networks list in the UI."""
         for i in self.network_tree.get_children():
             self.network_tree.delete(i)
         for ssid, password in networks.items():
             self.network_tree.insert('', 'end', values=(ssid, password))
 
     def _build_device_list_widget(self):
-        """Crea el widget con la lista de dispositivos."""
+        """Create the device list widget."""
         frame = ttk.LabelFrame(self, text="Dispositivos Conectados", padding=15)
         frame.pack(fill="x", padx=15, pady=(15, 5))
 
-        # Frame para el Treeview y el Scrollbar
+        # Frame for the Treeview and scrollbar
         tree_frame = ttk.Frame(frame)
         tree_frame.pack(fill="both", expand=True)
 
@@ -178,7 +178,7 @@ class MainWindow(tk.Tk):
         self.device_tree.heading('logo_port', text='Puerto LOGO!')
         self.device_tree.heading('logo_status', text='Estado LOGO!')
 
-        # Ajuste de anchos de columna para que quepan en la ventana
+        # Column widths adjusted to fit the window
         self.device_tree.column('name', width=80, stretch=tk.YES)
         self.device_tree.column('serial_number', width=120, stretch=tk.NO)
         self.device_tree.column('serial_port', width=110, anchor='center', stretch=tk.NO)
@@ -203,18 +203,18 @@ class MainWindow(tk.Tk):
 
     def update_device_list(self, devices):
         if not self.device_tree_tags_configured:
-            # Configurar tags de colores la primera vez
+            # Configure color tags the first time.
             self.device_tree.tag_configure('online', foreground='green')
             self.device_tree.tag_configure('offline', foreground='red')
             self.device_tree.tag_configure('evenrow', background='#f0f0f0')
             self.device_tree.tag_configure('oddrow', background='#ffffff')
             self.device_tree_tags_configured = True
 
-        # Limpiar la tabla antes de actualizar
+        # Clear the table before updating.
         for i in self.device_tree.get_children():
             self.device_tree.delete(i)
 
-        # Llenar con los nuevos datos
+        # Fill with the new data.
         for i, device in enumerate(devices):
             row_tag = 'evenrow' if i % 2 == 0 else 'oddrow'
             tcp_ip = device.cc.get("tcpIp", "-")
@@ -227,15 +227,15 @@ class MainWindow(tk.Tk):
             status_text = "Online" if device.connected else "Offline"
             logo_status_text = "Online" if device.connected_logo else "Offline"
 
-            # Insertar valores y aplicar tags
+            # Insert values and apply tags.
             item_id = self.device_tree.insert('', 'end', values=(device.name, device.serial, serial_port, baudrate, slave_id, tcp_ip, tcp_port, status_text, logo_ip, logo_port, logo_status_text), tags=(row_tag,))
             
-            # Aplicar tags de color solo a las celdas de estado (esto requiere un workaround en Tkinter)
-            # La forma estándar de colorear celdas no existe, pero podemos re-insertar con tags.
-            # Esta implementación es más simple y colorea toda la fila, lo cual es aceptado.
+            # Applying color tags only to status cells requires a Tkinter workaround.
+            # Standard cell coloring is not available, but rows can be reinserted with tags.
+            # This simpler implementation colors the whole row, which is acceptable.
 
     def _build_log_widget(self):
-        """Crea el widget de texto para los logs."""
+        """Create the text widget for logs."""
         widget = scrolledtext.ScrolledText(self, state="disabled", height=10)
         widget.pack(fill="x", padx=15, pady=(5, 15))
         return widget
@@ -247,7 +247,7 @@ class MainWindow(tk.Tk):
         self.log_widget.yview("end")
 
     def update_connectivity_status(self, is_connected: bool, network_name: str):
-        """Actualiza la UI con el estado de la conexión a Internet."""
+        """Update the UI with the internet connection status."""
         if is_connected:
             self.conn_status_var.set("Conectado")
             self.conn_status_label.config(foreground="green")
@@ -258,7 +258,7 @@ class MainWindow(tk.Tk):
             self.conn_network_var.set(network_name)
 
 class NetworkDialog(simpledialog.Dialog):
-    """Diálogo personalizado para añadir/editar redes Wi-Fi."""
+    """Custom dialog for adding/editing Wi-Fi networks."""
     def __init__(self, parent, title=None, ssid_initial="", password_initial=""):
         self.ssid_initial = ssid_initial
         self.password_initial = password_initial
@@ -279,7 +279,7 @@ class NetworkDialog(simpledialog.Dialog):
 
     def apply(self):
         ssid = self.ssid_entry.get().strip()
-        password = self.password_entry.get() # No quitamos espacios por si la clave los tiene
+        password = self.password_entry.get() # Do not strip spaces; the password may contain them.
 
         if not ssid:
             messagebox.showerror("Error de validación", "El nombre de la red (SSID) no puede estar vacío.", parent=self)
@@ -290,7 +290,7 @@ class NetworkDialog(simpledialog.Dialog):
             if messagebox.askyesno("Sin Contraseña", "La contraseña está vacía. ¿Es una red abierta?", parent=self):
                  self.result = (ssid, "")
             else:
-                self.result = None # El usuario canceló
+                self.result = None # The user canceled.
             return
 
         self.result = (ssid, password)

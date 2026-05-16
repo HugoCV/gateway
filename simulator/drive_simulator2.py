@@ -4,7 +4,7 @@ from threading import Thread
 import time
 import random
 
-# Crear bloque con espacio para 100 registros, prellenando los primeros valores
+# Create a block for 100 registers, pre-filling the first values.
 block = ModbusSequentialDataBlock(0, [
     1,      # 0: stat (RUN)
     3703,   # 1: freqRef (37.03 Hz * 100)
@@ -15,7 +15,7 @@ block = ModbusSequentialDataBlock(0, [
     40,     # 6: decTime (4.0 s * 10)
     1110,   # 7: speedRef (RPM)
     1       # 8: dir (FORWARD)
-] + [0] * 91)  # total 100 registros
+] + [0] * 91)  # 100 registers total
 
 store = ModbusSlaveContext(hr=block)
 context = ModbusServerContext(slaves=store, single=True)
@@ -29,7 +29,7 @@ def simulate_drive():
     context[0].setValues(3, 7, [1110])
     context[0].setValues(3, 8, [1])
     while True:
-        # Leer valores de entrada
+        # Read input values.
         stat      = block.getValues(0, 1)[0]
         freq_ref  = block.getValues(1, 1)[0]
         speed_ref = block.getValues(7, 1)[0]
@@ -44,7 +44,7 @@ def simulate_drive():
             elif freq > target_freq:
                 freq -= random.randint(50, 150)
 
-            # velocidad simulada proporcional a frecuencia
+            # Simulated speed proportional to frequency.
             target_speed = speed_ref + random.randint(-50, 50)
             if speed < target_speed:
                 speed += random.randint(10, 30)
@@ -55,11 +55,11 @@ def simulate_drive():
             freq = 0
             speed = 0
 
-        # corriente simulada en función de frecuencia
+        # Simulated current based on frequency.
         load_factor = random.uniform(0.5, 1.2)
         current = int((freq / 100) * load_factor * 10)  # A * 100
 
-        # Actualizar registros
+        # Update registers.
         context[0].setValues(3, 2, [freq])
         context[0].setValues(3, 3, [current])
         context[0].setValues(3, 4, [speed])
@@ -67,7 +67,7 @@ def simulate_drive():
         time.sleep(1)
 
 
-# Iniciar hilo del simulador
+# Start simulator thread.
 Thread(target=simulate_drive, daemon=True).start()
 
 print("✅ Variador simulado corriendo en Modbus TCP en puerto 5020")

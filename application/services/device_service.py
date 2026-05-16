@@ -10,7 +10,7 @@ from infrastructure.modbus.modbus_serial import ModbusSerial
 
 
 
-# Escalas por clave (aplican si la clave existe y el valor no es None)
+# Per-key scales apply when the key exists and the value is not None.
 
 class DeviceService:
     """
@@ -126,7 +126,7 @@ class DeviceService:
 
     def start(self) -> None:
         """Start all per-device connections according to connectionConfig."""
-        # Siempre intentamos arrancar LOGO
+        # Always try to start LOGO.
         if self.cc.get("logoIp") and self.cc.get("logoPort"):
             try:
                 if self.logo:
@@ -229,7 +229,7 @@ class DeviceService:
             return
 
         with self._lock:
-            # Filtrar solo claves permitidas
+            # Keep only allowed keys.
             filtered = {k: v for k, v in new_cfg.items() if k in self._ALLOWED_CC_KEYS}
             if not filtered:
                 self.log("ℹ️ update_connection_config: no hay cambios aplicables.")
@@ -237,20 +237,20 @@ class DeviceService:
 
             prev = dict(self.cc)
 
-            # Merge parcial: agrega/actualiza valores o elimina si vienen en None
+            # Partial merge: add/update values or remove keys when None is received.
             for k, v in filtered.items():
                 if v is None and k in self.cc:
                     del self.cc[k]
                 elif v is not None:
                     self.cc[k] = v
 
-            # Detectar cambios
+            # Detect changes.
             changed_tcp    = any(prev.get(k) != self.cc.get(k) for k in ("host", "tcpPort", "slaveId"))
             changed_serial = any(prev.get(k) != self.cc.get(k) for k in ("serialPort", "baudrate", "slaveId"))
             changed_logo   = any(prev.get(k) != self.cc.get(k) for k in ("logoIp", "logoPort"))
             changed_mode   = prev.get("mode") != self.cc.get("mode")
 
-            # Aplicar cambios
+            # Apply changes.
             if changed_tcp:
                 self.log(f"♻️ Reiniciando Modbus TCP ({self.device_id}) por cambio de configuración.")
                 self.modbus_tcp.update_config(
@@ -284,7 +284,7 @@ class DeviceService:
             if not any((changed_tcp, changed_serial, changed_logo, changed_mode)):
                 self.log("ℹ️ update_connection_config: no hubo cambios efectivos.")
 
-        # Notificar actualización
+        # Notify the update.
         self.update_fields(self)
 
     # ---------------------------

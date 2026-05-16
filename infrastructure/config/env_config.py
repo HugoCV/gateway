@@ -3,7 +3,7 @@
 import os
 from dotenv import load_dotenv
 
-# Carga el archivo .env si existe
+# Load the .env file if it exists.
 load_dotenv()
 
 # MQTT
@@ -16,10 +16,10 @@ MQTT_PASS = os.getenv("MQTT_PASS", "")
 RS485_PORT = os.getenv("RS485_PORT", "")
 RS485_BAUDRATE = int(os.getenv("RS485_BAUDRATE", 9600))
 
-# Otros valores opcionales
+# Other optional values
 ENVIRONMENT = os.getenv("ENV", "development")
 
-# Puedes agrupar la configuración si prefieres
+# Group configuration values if preferred.
 MQTT_CONFIG = {
     "host": MQTT_HOST,
     "port": MQTT_PORT,

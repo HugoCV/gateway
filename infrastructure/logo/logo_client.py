@@ -16,6 +16,51 @@ SIGNAL_LOGO_DIR = {
     "dischargePressure": 17,
 }
 
+LOGO_COMMANDS = {
+    "turnOn": {"address": 3, "values": {"on": 1}},
+    "turnOff": {"address": 4, "values": {"on": 1}},
+    "restart": {"address": 5, "values": {"on": 1}},
+}
+
+LOGO_STATUS_TYPES = {
+    0: {"value": "Panel desenergizado", "kind": "operation"},
+    1: {"value": "Falla de voltaje", "kind": "fault"},
+    3: {"value": "Falla de voltaje", "kind": "fault"},
+    8: {"value": "Reiniciando", "kind": "operation"},
+    9: {"value": "Falla de voltaje", "kind": "fault"},
+    32: {"value": "Falla: bajo nivel", "kind": "fault"},
+    33: {"value": "Selector Fuera", "kind": "operation"},
+    34: {"value": "Falla: bajo nivel", "kind": "fault"},
+    35: {"value": "Apagado por selector", "kind": "operation"},
+    41: {"value": "Falla térmica/variador", "kind": "fault"},
+    97: {"value": "Alta presión (conteo)", "kind": "operation"},
+    161: {
+        "value": "Arranque fallido (LOGO envía señal, contactor/variador no encienden)",
+        "kind": "fault",
+    },
+    163: {"value": "Operando", "kind": "operation"},
+    512: {"value": "Logo reiniciando", "kind": "operation"},
+    513: {"value": "Falla de voltaje", "kind": "fault"},
+    520: {"value": "Reiniciando", "kind": "operation"},
+    521: {"value": "Falla de voltaje", "kind": "fault"},
+    544: {"value": "Falla de bajo nivel", "kind": "fault"},
+    545: {"value": "Reposo", "kind": "operation"},
+    546: {"value": "Falla de bajo nivel", "kind": "fault"},
+    547: {"value": "Desaceleracion", "kind": "operation"},
+    577: {"value": "Falla de voltaje", "kind": "fault"},
+    608: {"value": "Falla bajo nivel", "kind": "fault"},
+    609: {"value": "Paro por alta precion", "kind": "operation"},
+    611: {"value": "Desaceleracion", "kind": "operation"},
+    673: {"value": "Encendido por selector", "kind": "operation"},
+    675: {"value": "Operacion", "kind": "operation"},
+    737: {"value": "Aceleracion", "kind": "operation"},
+    739: {"value": "Operacion", "kind": "operation"},
+    1569: {"value": "Falla de confirma", "kind": "fault"},
+    1633: {"value": "Falla de confirma", "kind": "fault"},
+    4705: {"value": "En Transito", "kind": "operation"},
+    4707: {"value": "Desaceleracion", "kind": "operation"},
+}
+
 
 class LogoModbusClient:
     def __init__(self, device, log, send_signal, host, port):
@@ -30,10 +75,10 @@ class LogoModbusClient:
         self._thread: threading.Thread | None = None
 
     # ---------------------------
-    # Ciclo de vida
+    # Lifecycle
     # ---------------------------
     def start(self):
-        """Lanza el hilo de auto_reconnect si no está corriendo."""
+        """Start the auto_reconnect thread if it is not already running."""
         if self._thread and self._thread.is_alive():
             self.log("⚠️ Hilo de LOGO ya corriendo")
             return
@@ -42,14 +87,14 @@ class LogoModbusClient:
         self._thread.start()
 
     def stop(self):
-        """Detiene el hilo de auto_reconnect y cierra conexión."""
+        """Stop the auto_reconnect thread and close the connection."""
         self._stop_event.set()
         if self._thread and self._thread.is_alive():
             self._thread.join(timeout=1)
         self.disconnect()
 
     def auto_reconnect(self, delay: float = 5.0):
-        """Loop interno de reconexión."""
+        """Internal reconnection loop."""
         while not self._stop_event.is_set():
             if self.connect():
                 self.log("✅ Conexión establecida a LOGO")
@@ -60,7 +105,7 @@ class LogoModbusClient:
             self._stop_event.wait(delay)
 
     # ---------------------------
-    # Conexión
+    # Connection
     # ---------------------------
     def connect(self) -> bool:
         self.log(f"▶ Conectando a LOGO {self.host}:{self.port}…")
@@ -97,31 +142,59 @@ class LogoModbusClient:
             return False
 
     # ---------------------------
-    # Comandos
+    # Commands
     # ---------------------------
+    def _get_command(self, name: str):
+        modbus_config = getattr(self.device, "device", {}).get("modbusConfig")
+        if isinstance(modbus_config, dict):
+            commands = modbus_config.get("commands")
+            if isinstance(commands, dict) and isinstance(commands.get(name), dict):
+                return commands[name]
+        return LOGO_COMMANDS.get(name)
+
+    def _write_command_value(self, command_name: str, value_name: str = "on") -> bool:
+        command = self._get_command(command_name)
+        if not isinstance(command, dict):
+            self.log(f"⚠️ Comando LOGO no configurado: {command_name}")
+            return False
+
+        values = command.get("values")
+        if not isinstance(values, dict) or value_name not in values:
+            self.log(f"⚠️ Valor LOGO no configurado: {command_name}.{value_name}")
+            return False
+
+        try:
+            address = int(command["address"])
+            value = bool(int(values[value_name]))
+        except (KeyError, TypeError, ValueError):
+            self.log(f"⚠️ Comando LOGO inválido: {command_name}.{value_name}")
+            return False
+
+        return self.write_coil(address, value)
+
     def turn_on(self) -> bool:
         if self.is_connected():
-            ok = self.write_coil(3, 1)
+            ok = self._write_command_value("turnOn")
             self.log("✅ LOGO encendido" if ok else "❌ Error al encender LOGO")
             return ok
         return False
 
     def turn_off(self) -> bool:
         if self.is_connected():
-            ok = self.write_coil(4, 1)
+            ok = self._write_command_value("turnOff")
             self.log("✅ LOGO apagado" if ok else "❌ Error al apagar LOGO")
             return ok
         return False
 
     def restart(self) -> bool:
         if self.is_connected():
-            ok = self.write_coil(5, 1)
+            ok = self._write_command_value("restart")
             self.log("✅ LOGO reiniciado" if ok else "❌ Error al reiniciar LOGO")
             return ok
         return False
 
     # ---------------------------
-    # Lectura / Escritura
+    # Reading / Writing
     # ---------------------------
     def write_coil(self, address: int, value: bool) -> bool:
         try:
@@ -164,7 +237,7 @@ class LogoModbusClient:
                 if failure_count >= 3:
                     self.log("⚠️ LOGO parece desconectado")
                     self.device.update_connected()
-                    self.start()  # relanza auto_reconnect
+                    self.start()  # relaunch auto_reconnect
                     return
                 time.sleep(interval)
                 self._read_callback(regs_group)
@@ -198,7 +271,7 @@ class LogoModbusClient:
         return False
 
     # ---------------------------
-    # Señales
+    # Signals
     # ---------------------------
     def _build_signal_from_regs(self, regs: dict[int, int]) -> dict:
         signal = {}
@@ -209,49 +282,13 @@ class LogoModbusClient:
                 continue
 
             if name == "status":
-                status_map = {
-                    9: {"value": "Falla de voltaje", "kind":"fault"},
-                    8: {"value": "Reiniciando", "kind":"operation"},
-                    0: {"value":"Panel desenergizado", "kind": "operation"},
-                    512: {"value":"Logo reiniciando", "kind": "operation"},
-                    163: {"value": "Operando", "kind": "operation"},
-                    97: {"value": "Alta presión (conteo)", "kind": "operation"},
-                    32: {"value": "Falla: bajo nivel", "kind": "fault"},
-                    35: {"value": "Apagado por selector", "kind": "operation"},
-                    33: {"value": "Selector Fuera", "kind": "operation"},
-                    521:  {"value": "Falla de voltaje", "kind": "fault"},
-                    520:  {"value": "Reiniciando", "kind": "operation"},
-                    608: {"value": "Falla bajo nivel", "kind": "fault"},
-                    577: {"value": "Falla de voltaje", "kind": "fault"},
-                    513: {"value": "Falla de voltaje", "kind": "fault"},
-                    544: {"value": "Falla de bajo nivel", "kind": "fault"},
-                    546: {"value": "Falla de bajo nivel", "kind": "fault"},
-                    4707: {"value": "Desaceleracion", "kind": "operation"},
-                    545: {"value": "Reposo", "kind": "operation"},
-                    547: {"value": "Desaceleracion", "kind": "operation"},
-                    609: {"value": "Paro por alta precion", "kind": "operation"},
-                    673: {"value": "Encendido por selector", "kind": "operation"},
-                    737: {"value": "Aceleracion", "kind": "operation"},
-                    611: {"value": "Desaceleracion", "kind": "operation"},
-                    1569: {"value": "Falla de confirma", "kind": "fault"},
-                    4705: {"value": "En Transito", "kind": "operation"},
-                    739: {"value": "Operacion", "kind": "operation"},
-                    1633: {"value": "Falla de confirma", "kind": "fault"},
-                    34: {"value": "Falla: bajo nivel", "kind": "fault"},
-                    1: {"value": "Falla de voltaje", "kind": "fault"},
-                    3: {"value": "Falla de voltaje", "kind": "fault"},
-                    41: {"value": "Falla térmica/variador", "kind": "fault"},
-                    675: {"value": "Operacion", "kind": "operation"},
-                    161: {"value": "Arranque fallido (LOGO envía señal, contactor/variador no encienden)", "kind": "fault"},
-                }
-
-                signal[name] = status_map.get(
+                signal[name] = LOGO_STATUS_TYPES.get(
                     value,
                     {"value": f"Desconocido ({value})", "kind": "operation"}
                 )
 
             else:
-                # Para otros registros dejamos el valor numérico
+                # Keep the numeric value for other registers.
                 signal[name] = { "value":value, "kind": "operation"}
         return signal
 

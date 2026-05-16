@@ -58,7 +58,7 @@ class ModbusTcp:
         self._lock = threading.Lock()
         self.poll_interval = 0.5
 
-        # Control de hilos
+        # Thread control
         self._stop_event = threading.Event()
         self._thread: threading.Thread | None = None
         self._reconnecting = False
@@ -114,7 +114,7 @@ class ModbusTcp:
         return self.write_register(address, value)
 
     # ---------------------------
-    # Ciclo de vida
+    # Lifecycle
     # ---------------------------
     def start(self):
         if self._thread and self._thread.is_alive():
@@ -134,7 +134,7 @@ class ModbusTcp:
         self.disconnect()
 
     # ---------------------------
-    # Conexión y reconexión
+    # Connection and reconnection
     # ---------------------------
     def auto_reconnect(self, delay: float = 5.0):
         if self._reconnecting:
@@ -197,7 +197,7 @@ class ModbusTcp:
                 self.client = None
 
     # ---------------------------
-    # Polling de registros
+    # Register polling
     # ---------------------------
     def start_reading(self):
         if not self.is_connected():
@@ -226,7 +226,7 @@ class ModbusTcp:
                 if failure_count >= 3:
                     self.log("⚠️ Modbus TCP parece desconectado")
                     self.device.update_connected()
-                    self.start()  # relanza auto_reconnect
+                    self.start()  # relaunch auto_reconnect
                     return
 
                 self._stop_event.wait(interval)
@@ -237,7 +237,7 @@ class ModbusTcp:
         return thread
 
     # ---------------------------
-    # Utilidades
+    # Utilities
     # ---------------------------
     def is_connected(self) -> bool:
         if not self.client:
@@ -299,7 +299,7 @@ class ModbusTcp:
         return False
 
     # ---------------------------
-    # Comandos
+    # Commands
     # ---------------------------
     def turn_on(self) -> bool:
         self.set_remote()
@@ -332,7 +332,7 @@ class ModbusTcp:
         return ok
 
     # ---------------------------
-    # Señales
+    # Signals
     # ---------------------------
     def _build_signal_from_regs(self, regs: dict[int, int], modbus_dir) -> dict:
         s = {}

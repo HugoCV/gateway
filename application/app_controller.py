@@ -14,8 +14,8 @@ from infrastructure.config.loader import get_gateway, save_gateway
 
 class AppController:
     """
-    Controlador principal de la aplicación Tkinter.
-    Gestiona conexiones MQTT, Modbus (TCP/Serial), Logo y HTTP.
+    Main controller for the Tkinter app.
+    Manages MQTT, Modbus (TCP/Serial), Logo, and HTTP connections.
     """
 
     def __init__(self, window):
@@ -30,7 +30,7 @@ class AppController:
             command_gateway_callback=self.on_receive_gateway_command
         )
         
-        # Poblar campos de la UI con la configuración actual
+        # Populate UI fields with the current configuration.
         self.window.org_id_var.set(self.gateway_cfg.get("organizationId", ""))
         self.window.gw_id_var.set(self.gateway_cfg.get("gatewayId", ""))
         self.window.update_known_networks_list(self.gateway_cfg.get("known_networks", {}))
@@ -43,7 +43,7 @@ class AppController:
             )
         self.connectivity_monitor.start()
 
-        # Conectar MQTT al final
+        # Connect MQTT at the end.
         self.on_connect_mqtt()
 
         self.device_manager = DeviceManager(self.mqtt_handler, self.refresh_device_list, self.window._log)
@@ -98,7 +98,7 @@ class AppController:
         org_id = self.window.org_id_var.get()
         gw_id = self.window.gw_id_var.get()
 
-        # Mantenemos las redes conocidas y otras configuraciones que ya estaban guardadas
+        # Preserve known networks and other settings that were already saved.
         current_config = get_gateway()
         current_config["organizationId"] = org_id
         current_config["gatewayId"] = gw_id
@@ -116,7 +116,7 @@ class AppController:
 
     # === Known Networks Management ===
     def _update_and_save_networks(self, networks):
-        """Actualiza las redes en la config, UI, monitor y guarda el archivo."""
+        """Update networks in config, UI, and monitor, then save the file."""
         current_config = get_gateway()
         current_config["known_networks"] = networks
         save_gateway(current_config)
@@ -124,7 +124,7 @@ class AppController:
         self.gateway_cfg = current_config
         self.window.update_known_networks_list(networks)
         
-        # Actualizar el monitor de conectividad con las nuevas redes en tiempo real
+        # Update the connectivity monitor with the new networks in real time.
         self.connectivity_monitor.known_networks = networks
         self.log("ℹ️ Lista de redes Wi-Fi actualizada.")
 
