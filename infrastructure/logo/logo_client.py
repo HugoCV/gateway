@@ -144,10 +144,21 @@ class LogoModbusClient:
     # ---------------------------
     # Commands
     # ---------------------------
-    def _get_command(self, name: str):
+    def _get_logo_config(self):
         modbus_config = getattr(self.device, "device", {}).get("modbusConfig")
-        if isinstance(modbus_config, dict):
-            commands = modbus_config.get("commands")
+        if not isinstance(modbus_config, dict):
+            return None
+
+        channels = modbus_config.get("channels")
+        if isinstance(channels, dict) and isinstance(channels.get("logo"), dict):
+            return channels["logo"]
+
+        return modbus_config
+
+    def _get_command(self, name: str):
+        config = self._get_logo_config()
+        if isinstance(config, dict):
+            commands = config.get("commands")
             if isinstance(commands, dict) and isinstance(commands.get(name), dict):
                 return commands[name]
         return LOGO_COMMANDS.get(name)
@@ -218,6 +229,38 @@ class LogoModbusClient:
     # ---------------------------
     # Polling
     # ---------------------------
+    def _get_signal_map(self) -> dict[str, int]:
+        config = self._get_logo_config()
+        if not isinstance(config, dict):
+            return SIGNAL_LOGO_DIR
+
+        config_map = config.get("registers")
+        if not isinstance(config_map, dict):
+            return SIGNAL_LOGO_DIR
+
+        registers: dict[str, int] = {}
+        for key, value in config_map.items():
+            try:
+                address = value.get("address") if isinstance(value, dict) else value
+                registers[str(key)] = int(address)
+            except (TypeError, ValueError):
+                self.log(f"⚠️ Registro LOGO inválido para {key}: {value}")
+
+        return registers or SIGNAL_LOGO_DIR
+
+    def _get_status_types(self):
+        config = self._get_logo_config()
+        if not isinstance(config, dict):
+            return LOGO_STATUS_TYPES
+
+        types = config.get("types")
+        if isinstance(types, dict):
+            status_types = types.get("status")
+            if isinstance(status_types, dict):
+                return status_types
+
+        return LOGO_STATUS_TYPES
+
     def poll_registers(self, addresses: list[int], interval: float = 0.5) -> threading.Thread:
         def _poll():
             failure_count = 0
@@ -248,7 +291,8 @@ class LogoModbusClient:
 
     def start_reading(self) -> None:
         if self.is_connected():
-            addrs = list(dict.fromkeys(SIGNAL_LOGO_DIR.values()))
+            signal_map = self._get_signal_map()
+            addrs = list(dict.fromkeys(signal_map.values()))
             self.poll_registers(addrs)
     def update_config(self, host=None, port=None) -> bool:
         """Update LOGO! parameters and reconnect if needed."""
@@ -275,15 +319,28 @@ class LogoModbusClient:
     # ---------------------------
     def _build_signal_from_regs(self, regs: dict[int, int]) -> dict:
         signal = {}
+        signal_map = self._get_signal_map()
+        status_types = self._get_status_types()
 
-        for name, addr in SIGNAL_LOGO_DIR.items():
+        for name, addr in signal_map.items():
             value = regs.get(addr)
             if value is None:
                 continue
 
             if name == "status":
-                signal[name] = LOGO_STATUS_TYPES.get(
-                    value,
+                signal[name] = status_types.get(
+                    str(value),
+                    status_types.get(
+                        value,
+                        {"value": f"Desconocido ({value})", "kind": "operation"}
+                    )
+                )
+                if not isinstance(signal[name], dict):
+                    signal[name] = {
+                        "value": signal[name],
+                        "kind": "operation",
+                    }
+                signal[name] = signal[name] or (
                     {"value": f"Desconocido ({value})", "kind": "operation"}
                 )
 

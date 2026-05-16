@@ -64,14 +64,11 @@ class ModbusTcp:
         self._reconnecting = False
 
     def _get_signal_map(self) -> dict[str, int]:
-        modbus_config = getattr(self.device, "device", {}).get("modbusConfig")
-        if not isinstance(modbus_config, dict):
+        config = self._get_modbus_config()
+        if not isinstance(config, dict):
             return SIGNAL_MODBUS_TCP_DIR
 
-        if modbus_config.get("protocol") != "modbus-tcp":
-            return SIGNAL_MODBUS_TCP_DIR
-
-        config_map = modbus_config.get("registers")
+        config_map = config.get("registers")
         if not isinstance(config_map, dict):
             return SIGNAL_MODBUS_TCP_DIR
 
@@ -85,10 +82,29 @@ class ModbusTcp:
 
         return registers or SIGNAL_MODBUS_TCP_DIR
 
-    def _get_command(self, name: str):
+    def _get_modbus_config(self):
         modbus_config = getattr(self.device, "device", {}).get("modbusConfig")
-        if isinstance(modbus_config, dict) and modbus_config.get("protocol") == "modbus-tcp":
-            commands = modbus_config.get("commands")
+        if not isinstance(modbus_config, dict):
+            return None
+
+        channels = modbus_config.get("channels")
+        if isinstance(channels, dict):
+            drive_config = channels.get("drive")
+            if (
+                isinstance(drive_config, dict)
+                and drive_config.get("protocol") == "modbus-tcp"
+            ):
+                return drive_config
+
+        if modbus_config.get("protocol") == "modbus-tcp":
+            return modbus_config
+
+        return None
+
+    def _get_command(self, name: str):
+        config = self._get_modbus_config()
+        if isinstance(config, dict):
+            commands = config.get("commands")
             if isinstance(commands, dict) and isinstance(commands.get(name), dict):
                 return commands[name]
         return DEVICE.get(name)
