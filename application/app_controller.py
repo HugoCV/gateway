@@ -71,16 +71,26 @@ class AppController:
         if action == "update-connections":
             ds.update_connection_config(command["params"])
         elif action == "device-command":
-            value = str(command.get("params", {}).get("command", "")).lower()
-            if value == "turnon":
+            params = command.get("params", {})
+            value = str(params.get("command", ""))
+            command_value = str(params.get("value", "on"))
+            channel = params.get("channel")
+            normalized_value = value.lower()
+            if normalized_value == "turnon":
                 self.log(f"El dispositivo {ds.name} se mandó a encender")
                 ds.turn_on()
-            elif value == "turnoff":
+            elif normalized_value == "turnoff":
                 self.log(f"El dispositivo {ds.name} se mandó a apagar")
                 ds.turn_off()
-            elif value == "restart":
+            elif normalized_value == "restart" and not channel:
                 self.log(f"El dispositivo {ds.name} se mandó a reiniciar")
                 ds.restart()
+            else:
+                self.log(
+                    f"Ejecutando comando {value}.{command_value} "
+                    f"en canal {channel or 'auto'} para {ds.name}"
+                )
+                ds.execute_command(value, channel, command_value)
         elif action == "update-config":
             print("update-config", command["params"]["value"], "device_serial", device_serial)
         

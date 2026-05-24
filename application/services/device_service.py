@@ -196,6 +196,44 @@ class DeviceService:
                 changed = self.logo.restart()
         print(f"Probando reiniciar con {self.cc['mode']}: {changed}")
 
+    def execute_command(self, command_name: str, channel: str | None = None, value_name: str = "on") -> bool:
+        command_key = (command_name or "").strip()
+        command_alias = command_key.lower()
+
+        if command_alias == "turnon":
+            self.turn_on()
+            return True
+        if command_alias == "turnoff":
+            self.turn_off()
+            return True
+        if command_alias == "restart" and not channel:
+            self.restart()
+            return True
+
+        if channel == "logo":
+            if self.logo and self.logo.is_connected():
+                return self.logo.execute_command(command_key, value_name)
+            return False
+
+        if channel == "drive":
+            if self.modbus_tcp and self.modbus_tcp.is_connected():
+                return self.modbus_tcp.execute_command(command_key, value_name)
+            if self.modbus_serial and self.modbus_serial.is_connected():
+                return self.modbus_serial.execute_command(command_key, value_name)
+            return False
+
+        if self.cc.get("mode") == "local" and self.logo and self.logo.is_connected():
+            return self.logo.execute_command(command_key, value_name)
+
+        if self.modbus_tcp and self.modbus_tcp.is_connected():
+            return self.modbus_tcp.execute_command(command_key, value_name)
+        if self.modbus_serial and self.modbus_serial.is_connected():
+            return self.modbus_serial.execute_command(command_key, value_name)
+        if self.logo and self.logo.is_connected():
+            return self.logo.execute_command(command_key, value_name)
+
+        return False
+
     # ---------------------------
     # Connection helpers (connect/disconnect)
     # ---------------------------

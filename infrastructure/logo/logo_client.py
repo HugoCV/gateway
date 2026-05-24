@@ -183,6 +183,9 @@ class LogoModbusClient:
 
         return self.write_coil(address, value)
 
+    def execute_command(self, command_name: str, value_name: str = "on") -> bool:
+        return self._write_command_value(command_name, value_name)
+
     def turn_on(self) -> bool:
         if self.is_connected():
             ok = self._write_command_value("turnOn")

@@ -129,6 +129,9 @@ class ModbusTcp:
 
         return self.write_register(address, value)
 
+    def execute_command(self, command_name: str, value_name: str = "on") -> bool:
+        return self._write_command_value(command_name, value_name)
+
     # ---------------------------
     # Lifecycle
     # ---------------------------
