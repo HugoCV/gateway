@@ -44,7 +44,6 @@ DEVICE = {
 }
 
 STATUS_TYPES_DIR = {0: "stop", 1: "fault", 2: "run", 7:"run"}
-DIR_TYPE_DIR = {4: "reverse", 1: "stop", 129: "auto", 130: "fwd", 193: "acc", 194: "fwd", 66:"fwd"}
 
 
 class ModbusSerial:
@@ -112,6 +111,23 @@ class ModbusSerial:
             if isinstance(commands, dict) and isinstance(commands.get(name), dict):
                 return commands[name]
         return DEVICE.get(name)
+
+    def _get_type_map(self, name: str):
+        config = self._get_modbus_config()
+        if not isinstance(config, dict):
+            return {}
+
+        types = config.get("types")
+        if isinstance(types, dict) and isinstance(types.get(name), dict):
+            return types[name]
+
+        registers = config.get("registers")
+        if isinstance(registers, dict):
+            register = registers.get(name)
+            if isinstance(register, dict) and isinstance(register.get("types"), dict):
+                return register["types"]
+
+        return {}
 
     def _write_command_value(self, command_name: str, value_name: str) -> bool:
         command = self._get_command(command_name)
@@ -344,7 +360,8 @@ class ModbusSerial:
             if name == "stat":
                 s[name] = {"value": STATUS_TYPES_DIR.get(v, f"Desconocido ({v})"), "kind": "operation"}
             if name == "dir":
-                s[name] = {"value": DIR_TYPE_DIR.get(v, f"Desconocido ({v})"), "kind": "operation"}
+                dir_types = self._get_type_map("dir")
+                s[name] = {"value": dir_types.get(str(v), f"Desconocido ({v})"), "kind": "operation"}
         return s
 
     def set_local(self) -> bool:

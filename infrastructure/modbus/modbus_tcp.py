@@ -27,17 +27,6 @@ SIGNAL_MODBUS_TCP_DIR = {
 }
 
 STATUS_TYPES_DIR = {0: "stop", 1: "fault", 2: "run"}
-DIR_TYPE_DIR = {
-    1: "stop",
-    4: "reverse",
-    65: "auto",
-    66: "fwd",
-    129: "auto",
-    130: "fwd",
-    193: "auto",
-    257: "acc",
-    258: "fwd",
-}
 
 DEVICE = {
     "status": {"address": 898, "values": {"on": 3, "off": 0, "run": 2}},
@@ -108,6 +97,23 @@ class ModbusTcp:
             if isinstance(commands, dict) and isinstance(commands.get(name), dict):
                 return commands[name]
         return DEVICE.get(name)
+
+    def _get_type_map(self, name: str):
+        config = self._get_modbus_config()
+        if not isinstance(config, dict):
+            return {}
+
+        types = config.get("types")
+        if isinstance(types, dict) and isinstance(types.get(name), dict):
+            return types[name]
+
+        registers = config.get("registers")
+        if isinstance(registers, dict):
+            register = registers.get(name)
+            if isinstance(register, dict) and isinstance(register.get("types"), dict):
+                return register["types"]
+
+        return {}
 
     def _write_command_value(self, command_name: str, value_name: str) -> bool:
         command = self._get_command(command_name)
@@ -370,8 +376,9 @@ class ModbusTcp:
                     "kind": "operation",
                 }
             if name == "dir":
+                dir_types = self._get_type_map("dir")
                 s[name] = {
-                    "value": DIR_TYPE_DIR.get(v, f"Desconocido ({v})"),
+                    "value": dir_types.get(str(v), f"Desconocido ({v})"),
                     "kind": "operation",
                 }
         return s
