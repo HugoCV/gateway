@@ -59,16 +59,15 @@ class DeviceService:
         self.cc: Dict[str, Any] = self.device.get("connectionConfig") or {}
 
         # Per-device handlers
-        # self.http: Optional[HttpClient] = None
-        # self.modbus_tcp: Optional[ModbusTcp] = None
-        # self.modbus_serial: Optional[ModbusSerial] = None
-        # self.logo: Optional[LogoModbusClient] = None
+        self.http = None
+        self.modbus_tcp: Optional[ModbusTcp] = None
+        self.modbus_serial: Optional[ModbusSerial] = None
+        self.logo: Optional[LogoModbusClient] = None
 
         # self.base_url = f"http://{self.cc['host']}:{self.cc['httpPort']}/api/dashboard"
         # self.http = HttpClient(self, self._send_signal, self.log)
-        self.modbus_serial = ModbusSerial(self, self._send_signal, self.log, self.cc["serialPort"], self.cc["baudrate"], self.cc["slaveId"])
-        self.modbus_tcp = ModbusTcp(self, self._send_signal, self.log, self.cc["host"], self.cc["tcpPort"], self.cc["slaveId"])
-        self.logo = LogoModbusClient(self, self.log, self._send_signal, self.cc.get("logoIp"), self.cc.get("logoPort"))
+        self._normalize_connection_config()
+        self._create_connection_clients()
         self.connected: bool = False
         self.connected_logo = False
         self.start()
@@ -104,6 +103,54 @@ class DeviceService:
                 self.http.stop()
         except Exception as e:
             self.log(f"⚠️ Error stopping HTTP: {e}")
+
+    def _normalize_connection_config(self) -> None:
+        """Fill safe defaults for optional connection settings."""
+        self.cc.setdefault("baudrate", 9600)
+        self.cc.setdefault("slaveId", 1)
+        self.cc.setdefault("mode", "remote")
+
+    def _create_connection_clients(self) -> None:
+        serial_port = self.cc.get("serialPort")
+        baudrate = self.cc.get("baudrate")
+        slave_id = self.cc.get("slaveId")
+        host = self.cc.get("host")
+        tcp_port = self.cc.get("tcpPort")
+        logo_ip = self.cc.get("logoIp")
+        logo_port = self.cc.get("logoPort")
+
+        if serial_port:
+            self.modbus_serial = ModbusSerial(
+                self,
+                self._send_signal,
+                self.log,
+                serial_port,
+                baudrate,
+                slave_id,
+            )
+        else:
+            self.log(f"ℹ️ {self.name}: conexión Modbus Serial no configurada.")
+
+        if host and tcp_port:
+            self.modbus_tcp = ModbusTcp(
+                self,
+                self._send_signal,
+                self.log,
+                host,
+                tcp_port,
+                slave_id,
+            )
+        else:
+            self.log(f"ℹ️ {self.name}: conexión Modbus TCP no configurada.")
+
+        if logo_ip and logo_port:
+            self.logo = LogoModbusClient(
+                self,
+                self.log,
+                self._send_signal,
+                logo_ip,
+                logo_port,
+            )
 
     def update_connected(self) -> None:
         """Check device connection status (TCP/Serial/LOGO) and notify via MQTT if changed."""
@@ -150,51 +197,55 @@ class DeviceService:
 
     def turn_on(self):
         changed = False
-        if self.cc["mode"] == "remote":
-            if self.modbus_tcp.is_connected():
+        if self.cc.get("mode", "remote") == "remote":
+            if self.modbus_tcp and self.modbus_tcp.is_connected():
                 changed = self.modbus_tcp.turn_on()
-            if not changed and self.modbus_serial.is_connected():
+            if not changed and self.modbus_serial and self.modbus_serial.is_connected():
                 changed = self.modbus_serial.turn_on()
-        elif self.cc["mode"] == "local":
-            if self.logo.is_connected():
+        elif self.cc.get("mode") == "local":
+            if self.logo and self.logo.is_connected():
                 changed = self.logo.turn_on()
-        print(f"Probando encender con {self.cc['mode']}: {changed}")
+        print(f"Probando encender con {self.cc.get('mode')}: {changed}")
 
 
     def turn_off(self):
         changed = False
-        if self.cc["mode"] == "remote":
-            if self.modbus_tcp.is_connected():
+        if self.cc.get("mode", "remote") == "remote":
+            if self.modbus_tcp and self.modbus_tcp.is_connected():
                 changed = self.modbus_tcp.turn_off()
-            if not changed and self.modbus_serial.is_connected():
+            if not changed and self.modbus_serial and self.modbus_serial.is_connected():
                 changed = self.modbus_serial.turn_off()
-        elif self.cc["mode"] == "local":
-            if self.logo.is_connected():
+        elif self.cc.get("mode") == "local":
+            if self.logo and self.logo.is_connected():
                 changed = self.logo.turn_off()
-        print(f"Probando apagar con {self.cc['mode']}: {changed}")
+        print(f"Probando apagar con {self.cc.get('mode')}: {changed}")
 
 
     def set_local(self):
-        changed = self.modbus_serial.set_local()
-        if not changed:
+        changed = False
+        if self.modbus_serial:
+            changed = self.modbus_serial.set_local()
+        if not changed and self.modbus_tcp:
             self.modbus_tcp.set_local()
 
     def set_remote(self):
-        changed = self.modbus_serial.set_remote()
-        if not changed:
+        changed = False
+        if self.modbus_serial:
+            changed = self.modbus_serial.set_remote()
+        if not changed and self.modbus_tcp:
             self.modbus_tcp.set_remote()
 
     def restart(self):
         changed = False
-        if self.cc["mode"] == "remote":
-            if self.modbus_tcp.is_connected():
+        if self.cc.get("mode", "remote") == "remote":
+            if self.modbus_tcp and self.modbus_tcp.is_connected():
                 changed = self.modbus_tcp.restart()
-            if not changed and self.modbus_serial.is_connected():
+            if not changed and self.modbus_serial and self.modbus_serial.is_connected():
                 changed = self.modbus_serial.restart()
-        elif self.cc["mode"] == "local":
-            if self.logo.is_connected():
+        elif self.cc.get("mode") == "local":
+            if self.logo and self.logo.is_connected():
                 changed = self.logo.restart()
-        print(f"Probando reiniciar con {self.cc['mode']}: {changed}")
+        print(f"Probando reiniciar con {self.cc.get('mode')}: {changed}")
 
     def execute_command(self, command_name: str, channel: str | None = None, value_name: str = "on") -> bool:
         command_key = (command_name or "").strip()
@@ -281,6 +332,7 @@ class DeviceService:
                     del self.cc[k]
                 elif v is not None:
                     self.cc[k] = v
+            self._normalize_connection_config()
 
             # Detect changes.
             changed_tcp    = any(prev.get(k) != self.cc.get(k) for k in ("host", "tcpPort", "slaveId"))
@@ -291,26 +343,70 @@ class DeviceService:
             # Apply changes.
             if changed_tcp:
                 self.log(f"♻️ Reiniciando Modbus TCP ({self.device_id}) por cambio de configuración.")
-                self.modbus_tcp.update_config(
-                    self.cc.get("host"),
-                    self.cc.get("tcpPort"),
-                    self.cc.get("slaveId")
-                )
+                has_tcp_config = bool(self.cc.get("host") and self.cc.get("tcpPort"))
+                if self.modbus_tcp and has_tcp_config:
+                    self.modbus_tcp.update_config(
+                        self.cc.get("host"),
+                        self.cc.get("tcpPort"),
+                        self.cc.get("slaveId")
+                    )
+                elif self.modbus_tcp and not has_tcp_config:
+                    self.modbus_tcp.stop()
+                    self.modbus_tcp = None
+                elif has_tcp_config:
+                    self.modbus_tcp = ModbusTcp(
+                        self,
+                        self._send_signal,
+                        self.log,
+                        self.cc.get("host"),
+                        self.cc.get("tcpPort"),
+                        self.cc.get("slaveId"),
+                    )
+                    self.modbus_tcp.start()
 
             if changed_serial:
                 self.log(f"♻️ Reiniciando Modbus Serial ({self.device_id}) por cambio de configuración.")
-                self.modbus_serial.update_config(
-                    self.cc.get("serialPort"),
-                    self.cc.get("baudrate"),
-                    self.cc.get("slaveId")
-                )
+                has_serial_config = bool(self.cc.get("serialPort"))
+                if self.modbus_serial and has_serial_config:
+                    self.modbus_serial.update_config(
+                        self.cc.get("serialPort"),
+                        self.cc.get("baudrate"),
+                        self.cc.get("slaveId")
+                    )
+                elif self.modbus_serial and not has_serial_config:
+                    self.modbus_serial.stop()
+                    self.modbus_serial = None
+                elif has_serial_config:
+                    self.modbus_serial = ModbusSerial(
+                        self,
+                        self._send_signal,
+                        self.log,
+                        self.cc.get("serialPort"),
+                        self.cc.get("baudrate"),
+                        self.cc.get("slaveId"),
+                    )
+                    self.modbus_serial.start()
 
             if changed_logo:
                 self.log(f"♻️ Reiniciando LOGO! ({self.device_id}) por cambio de configuración.")
-                self.logo.update_config(
-                    self.cc.get("logoIp"),
-                    self.cc.get("logoPort")
-                )
+                has_logo_config = bool(self.cc.get("logoIp") and self.cc.get("logoPort"))
+                if self.logo and has_logo_config:
+                    self.logo.update_config(
+                        self.cc.get("logoIp"),
+                        self.cc.get("logoPort")
+                    )
+                elif self.logo and not has_logo_config:
+                    self.logo.stop()
+                    self.logo = None
+                elif has_logo_config:
+                    self.logo = LogoModbusClient(
+                        self,
+                        self.log,
+                        self._send_signal,
+                        self.cc.get("logoIp"),
+                        self.cc.get("logoPort"),
+                    )
+                    self.logo.start()
 
             if changed_mode:
                 self.log(f"♻️ Modo cambiado a {self.cc.get('mode')}")
@@ -323,7 +419,8 @@ class DeviceService:
                 self.log("ℹ️ update_connection_config: no hubo cambios efectivos.")
 
         # Notify the update.
-        self.update_fields(self)
+        if self.update_fields:
+            self.update_fields(self)
 
     # ---------------------------
     # Internal helpers
