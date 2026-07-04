@@ -63,15 +63,6 @@ class ModbusTcp:
         if isinstance(registers, dict) and isinstance(registers.get(name), dict):
             return registers[name]
         return None
-    def _get_scale(self, name: str) -> float:
-        register = self._get_register_config(name)
-        if not isinstance(register, dict) or "scale" not in register:
-            return 1
-        try:
-            return float(register["scale"])
-        except (TypeError, ValueError):
-            self.log(f"Escala TCP invalida para {name}: {register.get('scale')}")
-            return 1
     def _get_type_map(self, name: str):
         config = self._get_modbus_config()
         if not isinstance(config, dict):
@@ -308,7 +299,7 @@ class ModbusTcp:
                     return mapped
                 return {"value": mapped, "kind": "operation"}
             return {"value": f"Desconocido ({value})", "kind": "operation"}
-        return {"value": value * self._get_scale(name), "kind": "operation"}
+        return {"value": value, "kind": "operation"}
     def _build_signal_from_regs(self, regs: dict[int, int], modbus_dir) -> dict:
         s = {}
         for name, addr in modbus_dir.items():
