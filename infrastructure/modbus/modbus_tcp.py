@@ -1,40 +1,6 @@
 import time
 import threading
 from pymodbus.client import ModbusTcpClient
-
-MODBUS_SCALES = {
-    "curr": 0.1,
-    "power": 0.1,
-    "freqRef": 0.01,
-    "freq": 0.01,
-}
-
-SIGNAL_MODBUS_TCP_DIR = {
-    "freqRef": 5,
-    "accTime": 7,
-    "decTime": 8,
-    "curr": 9,
-    "freq": 10,
-    "volt": 11,
-    "voltDcLink": 12,
-    "power": 13,
-    "fault": 15,
-    "stat": 17,
-    "dir": 6,
-    "speed": 786,
-    "alarm": 816,
-    "temp": 861,
-}
-
-STATUS_TYPES_DIR = {0: "stop", 1: "fault", 2: "run"}
-
-DEVICE = {
-    "status": {"address": 898, "values": {"on": 3, "off": 0, "run": 2}},
-    "mode": {"address": 4358, "values": {"local": 2, "remote": 4}},
-    "restart": {"address": 901, "values": {"on": 1, "off": 0}},
-}
-
-
 class ModbusTcp:
     def __init__(self, device, send_signal, log, ip, port, slave_id):
         self.ip = ip
@@ -46,36 +12,31 @@ class ModbusTcp:
         self.client: ModbusTcpClient | None = None
         self._lock = threading.Lock()
         self.poll_interval = 0.5
-
         # Thread control
         self._stop_event = threading.Event()
         self._thread: threading.Thread | None = None
         self._reconnecting = False
-
     def _get_signal_map(self) -> dict[str, int]:
         config = self._get_modbus_config()
         if not isinstance(config, dict):
-            return SIGNAL_MODBUS_TCP_DIR
-
+            self.log("Config Modbus TCP no disponible")
+            return {}
         config_map = config.get("registers")
         if not isinstance(config_map, dict):
-            return SIGNAL_MODBUS_TCP_DIR
-
+            self.log("Registros TCP no configurados")
+            return {}
         registers: dict[str, int] = {}
         for key, value in config_map.items():
             try:
                 address = value.get("address") if isinstance(value, dict) else value
                 registers[str(key)] = int(address)
             except (TypeError, ValueError):
-                self.log(f"⚠️ Registro TCP inválido para {key}: {value}")
-
-        return registers or SIGNAL_MODBUS_TCP_DIR
-
+                self.log(f"Registro TCP invalido para {key}: {value}")
+        return registers
     def _get_modbus_config(self):
         modbus_config = getattr(self.device, "device", {}).get("modbusConfig")
         if not isinstance(modbus_config, dict):
             return None
-
         channels = modbus_config.get("channels")
         if isinstance(channels, dict):
             drive_config = channels.get("drive")
@@ -84,60 +45,64 @@ class ModbusTcp:
                 and drive_config.get("protocol") == "modbus-tcp"
             ):
                 return drive_config
-
         if modbus_config.get("protocol") == "modbus-tcp":
             return modbus_config
-
         return None
-
     def _get_command(self, name: str):
         config = self._get_modbus_config()
         if isinstance(config, dict):
             commands = config.get("commands")
             if isinstance(commands, dict) and isinstance(commands.get(name), dict):
                 return commands[name]
-        return DEVICE.get(name)
-
+        return None
+    def _get_register_config(self, name: str):
+        config = self._get_modbus_config()
+        if not isinstance(config, dict):
+            return None
+        registers = config.get("registers")
+        if isinstance(registers, dict) and isinstance(registers.get(name), dict):
+            return registers[name]
+        return None
+    def _get_scale(self, name: str) -> float:
+        register = self._get_register_config(name)
+        if not isinstance(register, dict) or "scale" not in register:
+            return 1
+        try:
+            return float(register["scale"])
+        except (TypeError, ValueError):
+            self.log(f"Escala TCP invalida para {name}: {register.get('scale')}")
+            return 1
     def _get_type_map(self, name: str):
         config = self._get_modbus_config()
         if not isinstance(config, dict):
             return {}
-
         types = config.get("types")
         if isinstance(types, dict) and isinstance(types.get(name), dict):
             return types[name]
-
         registers = config.get("registers")
         if isinstance(registers, dict):
             register = registers.get(name)
             if isinstance(register, dict) and isinstance(register.get("types"), dict):
                 return register["types"]
-
         return {}
-
     def _write_command_value(self, command_name: str, value_name: str) -> bool:
         command = self._get_command(command_name)
         if not isinstance(command, dict):
             self.log(f"⚠️ Comando TCP no configurado: {command_name}")
             return False
-
         values = command.get("values")
         if not isinstance(values, dict) or value_name not in values:
             self.log(f"⚠️ Valor TCP no configurado: {command_name}.{value_name}")
             return False
-
         try:
             address = int(command["address"])
             value = int(values[value_name])
         except (KeyError, TypeError, ValueError):
             self.log(f"⚠️ Comando TCP inválido: {command_name}.{value_name}")
             return False
-
         return self.write_register(address, value)
-
     def execute_command(self, command_name: str, value_name: str = "on") -> bool:
         return self._write_command_value(command_name, value_name)
-
     # ---------------------------
     # Lifecycle
     # ---------------------------
@@ -149,7 +114,6 @@ class ModbusTcp:
         self._stop_event.clear()
         self._thread = threading.Thread(target=self.auto_reconnect, daemon=True)
         self._thread.start()
-
     def stop(self):
         self.log("⏹️ STOP Modbus TCP")
         self._stop_event.set()
@@ -157,7 +121,6 @@ class ModbusTcp:
             if threading.current_thread() != self._thread:
                 self._thread.join(timeout=1)
         self.disconnect()
-
     # ---------------------------
     # Connection and reconnection
     # ---------------------------
@@ -165,11 +128,9 @@ class ModbusTcp:
         if self._reconnecting:
             self.log("⚠️ auto_reconnect TCP ya en curso, no se lanza otro")
             return
-
         self._reconnecting = True
         self.disconnect()
         self.log("🔄 Iniciando auto_reconnect TCP...")
-
         while not self._stop_event.is_set():
             if self.connect():
                 self.log("✅ Conexión establecida a Modbus TCP")
@@ -178,9 +139,7 @@ class ModbusTcp:
                 break
             self.log(f"❌ Falló conexión TCP, reintento en {delay}s")
             self._stop_event.wait(delay)
-
         self._reconnecting = False
-
     def connect(self) -> bool:
         self.log(f"Iniciando conexión Modbus TCP a {self.ip}:{self.port}")
         try:
@@ -190,7 +149,6 @@ class ModbusTcp:
                 except Exception:
                     pass
                 self.client = None
-
             self.client = ModbusTcpClient(
                 host=self.ip, port=self.port, timeout=1.0, retries=0
             )
@@ -198,7 +156,6 @@ class ModbusTcp:
                 self.log(f"❌ No se pudo conectar a {self.ip}:{self.port}")
                 self.client = None
                 return False
-
             self.log("✅ Se conectó por medio de TCP")
             return True
         except Exception as e:
@@ -210,7 +167,6 @@ class ModbusTcp:
                     pass
             self.client = None
             return False
-
     def disconnect(self):
         if self.client:
             try:
@@ -220,7 +176,6 @@ class ModbusTcp:
                 self.log(f"❌ Error durante disconnect: {e}")
             finally:
                 self.client = None
-
     # ---------------------------
     # Register polling
     # ---------------------------
@@ -230,7 +185,6 @@ class ModbusTcp:
         signal_map = self._get_signal_map()
         addrs = list(dict.fromkeys(signal_map.values()))
         self.tcp_poll = self.poll_registers(addresses=addrs, interval=self.poll_interval)
-
     def poll_registers(self, addresses: list[int], interval: float = 0.5):
         def _poll():
             failure_count = 0
@@ -247,20 +201,16 @@ class ModbusTcp:
                     except Exception as e:
                         self.log(f"❌ Exception polling register {addr}: {e}")
                         failure_count += 1
-
                 if failure_count >= 3:
                     self.log("⚠️ Modbus TCP parece desconectado")
                     self.device.update_connected()
                     self.start()  # relaunch auto_reconnect
                     return
-
                 self._stop_event.wait(interval)
                 self._read_callback(regs_group)
-
         thread = threading.Thread(target=_poll, daemon=True)
         thread.start()
         return thread
-
     # ---------------------------
     # Utilities
     # ---------------------------
@@ -273,7 +223,6 @@ class ModbusTcp:
             return getattr(self.client, "connected", False)
         except Exception:
             return False
-
     def read_holding_registers(self, address: int, count: int = 1):
         if not self.client:
             self.log("⚠️ Client not connected. Call connect() first.")
@@ -289,7 +238,6 @@ class ModbusTcp:
             except Exception as e:
                 self.log(f"❌ Exception reading registers: {e}")
         return None
-
     def write_register(self, address: int, value: int) -> bool:
         if not self.client:
             self.log("⚠️ Client not connected")
@@ -303,7 +251,6 @@ class ModbusTcp:
         except Exception as e:
             self.log(f"❌ Exception writing register {address}: {e}")
         return False
-
     def update_config(self, ip=None, port=None, slave_id=None):
         changed = False
         if ip and ip != self.ip:
@@ -315,27 +262,23 @@ class ModbusTcp:
         if slave_id and slave_id != self.slave_id:
             self.slave_id = slave_id
             changed = True
-
         if changed:
             self.log(f"🔄 Updating TCP config: {self.ip}:{self.port}, slave={self.slave_id}")
             self.stop()
             self.start()
             return True
         return False
-
     # ---------------------------
     # Commands
     # ---------------------------
     def turn_on(self) -> bool:
         self.set_remote()
         return self._write_command_value("status", "on")
-
     def turn_off(self) -> bool:
         self.set_remote()
         is_turned_off = self._write_command_value("status", "off")
         self.set_local()
         return is_turned_off
-
     def restart(self):
         if not self.client:
             return False
@@ -345,20 +288,27 @@ class ModbusTcp:
             self.turn_on()
         self.log("✔ Comando enviado: RESET")
         return ok
-
     def set_local(self) -> bool:
         ok = self._write_command_value("mode", "local")
         self.log("✅ Puesto en local" if ok else "❌ No se pudo poner en local")
         return ok
-
     def set_remote(self) -> bool:
         ok = self._write_command_value("mode", "remote")
         self.log("✅ Puesto en remoto" if ok else "❌ No se pudo poner en remoto")
         return ok
-
     # ---------------------------
     # Signals
     # ---------------------------
+    def _format_signal_value(self, name: str, value: int) -> dict:
+        type_map = self._get_type_map(name)
+        if isinstance(type_map, dict) and type_map:
+            mapped = type_map.get(str(value), type_map.get(value))
+            if mapped is not None:
+                if isinstance(mapped, dict):
+                    return mapped
+                return {"value": mapped, "kind": "operation"}
+            return {"value": f"Desconocido ({value})", "kind": "operation"}
+        return {"value": value * self._get_scale(name), "kind": "operation"}
     def _build_signal_from_regs(self, regs: dict[int, int], modbus_dir) -> dict:
         s = {}
         for name, addr in modbus_dir.items():
@@ -366,23 +316,8 @@ class ModbusTcp:
             if v is None:
                 s[name] = None
                 continue
-            if name in MODBUS_SCALES:
-                s[name] = {"value": v * MODBUS_SCALES[name], "kind": "operation"}
-            else:
-                s[name] = {"value": v, "kind": "operation"}
-            if name == "stat":
-                s[name] = {
-                    "value": STATUS_TYPES_DIR.get(v, f"Desconocido ({v})"),
-                    "kind": "operation",
-                }
-            if name == "dir":
-                dir_types = self._get_type_map("dir")
-                s[name] = {
-                    "value": dir_types.get(str(v), f"Desconocido ({v})"),
-                    "kind": "operation",
-                }
+            s[name] = self._format_signal_value(name, v)
         return s
-
     def _read_callback(self, regs):
         signal = self._build_signal_from_regs(regs, self._get_signal_map())
         payload = {k: v for k, v in signal.items() if v is not None}
