@@ -65,7 +65,8 @@ elif [ -f "${INSTALL_DIR}/pyproject.toml" ]; then
 elif [ -f "${INSTALL_DIR}/setup.py" ]; then
   run_as_user "cd '${INSTALL_DIR}' && '${INSTALL_DIR}/.venv/bin/pip' install ."
 else
-  log "Warning: no requirements.txt, pyproject.toml or setup.py found in ${INSTALL_DIR}."
+  log "Error: no requirements.txt, pyproject.toml or setup.py found in ${INSTALL_DIR}."
+  exit 1
 fi
 
 log "[6/7] Creating startup wrapper..."
