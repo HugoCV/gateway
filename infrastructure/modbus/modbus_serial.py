@@ -98,6 +98,12 @@ class ModbusSerial:
         except (KeyError, TypeError, ValueError):
             self.log(f"⚠️ Comando serial inválido: {command_name}.{value_name}")
             return False
+        if command_name == "status" and value_name in ("on", "off"):
+            action = "encender" if value_name == "on" else "apagar"
+            self.log(
+                f"🔌 Modbus Serial: enviando comando para {action} "
+                f"(address={address}, value={value}, slaveId={self.slave_id})"
+            )
         return self.write_register(address, value)
     def execute_command(self, command_name: str, value_name: str = "on") -> bool:
         return self._write_command_value(command_name, value_name)
@@ -239,8 +245,6 @@ class ModbusSerial:
         if not self.client:
             self.log("⚠️ Client not connected")
             return None
-        self.log(f"address: {address}")
-        self.log(f"count: {count}")
         with self._lock:
             try:
                 rr = self.client.read_holding_registers(address, count=count, device_id=self.slave_id)

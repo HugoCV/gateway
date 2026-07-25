@@ -91,6 +91,12 @@ class ModbusTcp:
         except (KeyError, TypeError, ValueError):
             self.log(f"⚠️ Comando TCP inválido: {command_name}.{value_name}")
             return False
+        if command_name == "status" and value_name in ("on", "off"):
+            action = "encender" if value_name == "on" else "apagar"
+            self.log(
+                f"🔌 Modbus TCP: enviando comando para {action} "
+                f"(address={address}, value={value}, slaveId={self.slave_id})"
+            )
         return self.write_register(address, value)
     def execute_command(self, command_name: str, value_name: str = "on") -> bool:
         return self._write_command_value(command_name, value_name)
@@ -219,8 +225,6 @@ class ModbusTcp:
             self.log("⚠️ Client not connected. Call connect() first.")
             return None
         with self._lock:
-            self.log(f"address: {address}")
-            self.log(f"count: {count}")
             try:
                 rr = self.client.read_holding_registers(address, count=count)
                 if rr and not rr.isError():
