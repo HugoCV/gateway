@@ -83,7 +83,7 @@ class LogoModbusClient:
         channels = modbus_config.get("channels")
         if isinstance(channels, dict) and isinstance(channels.get("logo"), dict):
             return channels["logo"]
-        return modbus_config
+        return None
     def _get_command(self, name: str):
         config = self._get_logo_config()
         if isinstance(config, dict):

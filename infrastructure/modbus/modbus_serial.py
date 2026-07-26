@@ -52,8 +52,6 @@ class ModbusSerial:
                 and drive_config.get("protocol") == "modbus-rtu"
             ):
                 return drive_config
-        if modbus_config.get("protocol") == "modbus-rtu":
-            return modbus_config
         return None
     def _get_command(self, name: str):
         config = self._get_modbus_config()
@@ -62,27 +60,6 @@ class ModbusSerial:
             if isinstance(commands, dict) and isinstance(commands.get(name), dict):
                 return commands[name]
         return None
-    def _get_register_config(self, name: str):
-        config = self._get_modbus_config()
-        if not isinstance(config, dict):
-            return None
-        registers = config.get("registers")
-        if isinstance(registers, dict) and isinstance(registers.get(name), dict):
-            return registers[name]
-        return None
-    def _get_type_map(self, name: str):
-        config = self._get_modbus_config()
-        if not isinstance(config, dict):
-            return {}
-        types = config.get("types")
-        if isinstance(types, dict) and isinstance(types.get(name), dict):
-            return types[name]
-        registers = config.get("registers")
-        if isinstance(registers, dict):
-            register = registers.get(name)
-            if isinstance(register, dict) and isinstance(register.get("types"), dict):
-                return register["types"]
-        return {}
     def _write_command_value(self, command_name: str, value_name: str) -> bool:
         command = self._get_command(command_name)
         if not isinstance(command, dict):
@@ -276,15 +253,7 @@ class ModbusSerial:
         return self._write_command_value("status", "on")
     def turn_off(self) -> bool:
         return self._write_command_value("status", "off")
-    def _format_signal_value(self, name: str, value: int) -> dict:
-        type_map = self._get_type_map(name)
-        if isinstance(type_map, dict) and type_map:
-            mapped = type_map.get(str(value), type_map.get(value))
-            if mapped is not None:
-                if isinstance(mapped, dict):
-                    return mapped
-                return {"value": mapped, "kind": "operation"}
-            return {"value": f"Desconocido ({value})", "kind": "operation"}
+    def _format_signal_value(self, _name: str, value: int) -> dict:
         return {"value": value, "kind": "operation"}
     def _build_signal_from_regs(self, regs: dict[int, int], modbus_dir) -> dict:
         s = {}
