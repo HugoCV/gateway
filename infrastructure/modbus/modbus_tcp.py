@@ -39,12 +39,12 @@ class ModbusTcp:
             return None
         channels = modbus_config.get("channels")
         if isinstance(channels, dict):
-            drive_config = channels.get("drive")
+            direct_config = channels.get("direct")
             if (
-                isinstance(drive_config, dict)
-                and drive_config.get("protocol") == "modbus-tcp"
+                isinstance(direct_config, dict)
+                and direct_config.get("protocol") == "modbus-tcp"
             ):
-                return drive_config
+                return direct_config
         return None
     def _get_command(self, name: str):
         config = self._get_modbus_config()
@@ -286,4 +286,4 @@ class ModbusTcp:
         signal = self._build_signal_from_regs(regs, self._get_signal_map())
         payload = {k: v for k, v in signal.items() if v is not None}
         if payload:
-            self.send_signal(payload, "drive")
+            self.send_signal(payload, "direct")

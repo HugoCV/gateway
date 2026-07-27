@@ -266,7 +266,7 @@ class DeviceService:
                 return self.logo.execute_command(command_key, value_name)
             return False
 
-        if channel == "drive":
+        if channel == "direct":
             if self.modbus_tcp and self.modbus_tcp.is_connected():
                 return self.modbus_tcp.execute_command(command_key, value_name)
             if self.modbus_serial and self.modbus_serial.is_connected():
