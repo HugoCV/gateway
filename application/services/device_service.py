@@ -236,7 +236,7 @@ class DeviceService:
             if self.logo and self.logo.is_connected():
                 changed = self.logo.turn_on()
         print(f"Probando encender con {self.cc.get('mode')}: {changed}")
-
+        return bool(changed)
 
     def turn_off(self):
         changed = False
@@ -249,7 +249,7 @@ class DeviceService:
             if self.logo and self.logo.is_connected():
                 changed = self.logo.turn_off()
         print(f"Probando apagar con {self.cc.get('mode')}: {changed}")
-
+        return bool(changed)
 
     def set_local(self):
         changed = False
@@ -276,20 +276,18 @@ class DeviceService:
             if self.logo and self.logo.is_connected():
                 changed = self.logo.restart()
         print(f"Probando reiniciar con {self.cc.get('mode')}: {changed}")
+        return bool(changed)
 
     def execute_command(self, command_name: str, channel: str | None = None, value_name: str = "on") -> bool:
         command_key = (command_name or "").strip()
         command_alias = command_key.lower()
 
         if command_alias == "turnon":
-            self.turn_on()
-            return True
+            return self.turn_on()
         if command_alias == "turnoff":
-            self.turn_off()
-            return True
+            return self.turn_off()
         if command_alias == "restart" and not channel:
-            self.restart()
-            return True
+            return self.restart()
 
         if channel == "logo":
             if self.logo and self.logo.is_connected():

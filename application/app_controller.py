@@ -62,12 +62,27 @@ class AppController:
 
     
     def on_receive_command(self, device_serial, command):
-        if not self.devices:
-            self.window._log(f"no hay dispositivos conectados commando recivido {command}")
-        if not (ds := self.devices.get(device_serial)):
-                    self.window._log("⚠️ No device selected.")
-                    return    
         action = command.get("action")
+        command_id = command.get("commandId")
+
+        if not (ds := self.devices.get(device_serial)):
+            self.log(
+                f"⚠️ No se encontró el dispositivo {device_serial} "
+                f"para ejecutar {command}"
+            )
+            if action == "device-command" and command_id:
+                params = command.get("params", {})
+                self.mqtt_handler.publish_device_command_result(
+                    device_serial=device_serial,
+                    command_id=command_id,
+                    status="failed",
+                    command_name=str(params.get("command", "")),
+                    value=str(params.get("value", "on")),
+                    channel=params.get("channel"),
+                    reason="device_not_found",
+                )
+            return
+
         if action == "update-connections":
             ds.update_connection_config(command["params"])
         elif action == "device-command":
@@ -76,21 +91,49 @@ class AppController:
             command_value = str(params.get("value", "on"))
             channel = params.get("channel")
             normalized_value = value.lower()
-            if normalized_value == "turnon":
-                self.log(f"El dispositivo {ds.name} se mandó a encender")
-                ds.turn_on()
-            elif normalized_value == "turnoff":
-                self.log(f"El dispositivo {ds.name} se mandó a apagar")
-                ds.turn_off()
-            elif normalized_value == "restart" and not channel:
-                self.log(f"El dispositivo {ds.name} se mandó a reiniciar")
-                ds.restart()
+            succeeded = False
+            reason = None
+
+            try:
+                if normalized_value == "turnon":
+                    self.log(f"El dispositivo {ds.name} se mandó a encender")
+                    succeeded = ds.turn_on()
+                elif normalized_value == "turnoff":
+                    self.log(f"El dispositivo {ds.name} se mandó a apagar")
+                    succeeded = ds.turn_off()
+                elif normalized_value == "restart" and not channel:
+                    self.log(f"El dispositivo {ds.name} se mandó a reiniciar")
+                    succeeded = ds.restart()
+                else:
+                    self.log(
+                        f"Ejecutando comando {value}.{command_value} "
+                        f"en canal {channel or 'auto'} para {ds.name}"
+                    )
+                    succeeded = ds.execute_command(value, channel, command_value)
+                if not succeeded:
+                    reason = "device_write_failed"
+            except Exception as error:
+                reason = "command_exception"
+                self.log(
+                    f"❌ Error ejecutando comando {value} "
+                    f"en {device_serial}: {error}"
+                )
+
+            if command_id:
+                self.mqtt_handler.publish_device_command_result(
+                    device_serial=device_serial,
+                    command_id=command_id,
+                    status="success" if succeeded else "failed",
+                    command_name=value,
+                    value=command_value,
+                    channel=channel,
+                    reason=reason,
+                )
             else:
                 self.log(
-                    f"Ejecutando comando {value}.{command_value} "
-                    f"en canal {channel or 'auto'} para {ds.name}"
+                    f"⚠️ Comando {value} sin commandId; "
+                    "no se puede confirmar al backend"
                 )
-                ds.execute_command(value, channel, command_value)
         elif action == "update-config":
             print("update-config", command["params"]["value"], "device_serial", device_serial)
         

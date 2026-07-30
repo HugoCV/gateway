@@ -104,6 +104,11 @@ class MqttClient:
     def _topic_publish_device_status(self, org_id:str, gw_id: str, serial:str) -> str:
         return f"tenant/{org_id}/gateway/{gw_id}/device/{serial}/status"
 
+    def _topic_publish_device_command_result(
+        self, org_id: str, gw_id: str, serial: str
+    ) -> str:
+        return f"tenant/{org_id}/gateway/{gw_id}/device/{serial}/command/result"
+
     # ---------- Connection ----------
     def connect(self) -> None:
         """Configure the client, TLS/LWT, and background auto-reconnect."""
@@ -318,6 +323,38 @@ class MqttClient:
             return False
 
     # ---------- Public API ----------
+    def publish_device_command_result(
+        self,
+        device_serial: str,
+        command_id: str,
+        status: str,
+        command_name: str,
+        value: str = None,
+        channel: str = None,
+        reason: str = None,
+    ) -> bool:
+        topic = self._topic_publish_device_command_result(
+            self.org_id, self.gw_id, device_serial
+        )
+        payload = {
+            "commandId": command_id,
+            "status": status,
+            "command": command_name,
+            "value": value,
+            "channel": channel,
+        }
+        if reason:
+            payload["reason"] = reason
+
+        serialized_payload = json.dumps(payload)
+        published = self._publish(topic, serialized_payload, qos=1)
+        if published:
+            self.log(
+                f"📡 [COMMAND-RESULT] device={device_serial} "
+                f"commandId={command_id} status={status}"
+            )
+        return published
+
     def send_signal(self, topic_info: Dict[str, str], signal_info: Dict[str, Any]) -> None:
         org_id = topic_info.get("organization_id") or topic_info.get("organizationId")
         gw_id = topic_info.get("gateway_id") or topic_info.get("gatewayId")
