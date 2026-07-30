@@ -257,8 +257,9 @@ class MqttClient:
             return
 
         topic = self._topic_publish_signal(org_id, gw_id, serial)
-        if self._publish(topic, json.dumps(signal_info, default=str), qos=1):
-            self.log(f"📤 Signal → {topic}")
+        serialized_signal = json.dumps(signal_info, default=str)
+        if self._publish(topic, serialized_signal, qos=1):
+            self.log(f"📤 [MQTT] topic={topic} payload={serialized_signal}")
 
     def request_gateway_config(self, cb: Callable) -> None:
         self.client.message_callback_add(self.gatewayRespTopic, cb)
