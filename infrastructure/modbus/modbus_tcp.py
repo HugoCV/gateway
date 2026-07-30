@@ -1,4 +1,3 @@
-import time
 import threading
 from pymodbus.client import ModbusTcpClient
 class ModbusTcp:
@@ -19,7 +18,6 @@ class ModbusTcp:
         self._stop_event = threading.Event()
         self._thread: threading.Thread | None = None
         self._reconnecting = False
-        self._last_signal_log_at = 0.0
     def _get_signal_map(self) -> dict[str, int]:
         config = self._get_modbus_config()
         if not isinstance(config, dict):
@@ -162,11 +160,6 @@ class ModbusTcp:
             return
         signal_map = self._get_signal_map()
         addrs = list(dict.fromkeys(signal_map.values()))
-        self.log(
-            f"🧭 [MODBUS-TCP] device={self.device.serial} channel=direct "
-            f"host={self.ip}:{self.port} "
-            f"slaveId={self.slave_id} registers={signal_map}"
-        )
         self.tcp_poll = self.poll_registers(addresses=addrs, interval=self.poll_interval)
     def poll_registers(self, addresses: list[int], interval: float = 0.5):
         def _poll():
@@ -348,13 +341,5 @@ class ModbusTcp:
     def _read_callback(self, regs):
         signal = self._build_signal_from_regs(regs, self._get_signal_map())
         payload = {k: v for k, v in signal.items() if v is not None}
-        now = time.monotonic()
-        if now - self._last_signal_log_at >= 5:
-            self.log(
-                f"📥 [MODBUS-TCP] device={self.device.serial} channel=direct "
-                f"host={self.ip}:{self.port} "
-                f"slaveId={self.slave_id} raw={regs} payload={payload}"
-            )
-            self._last_signal_log_at = now
         if payload:
             self.send_signal(payload, "direct")
