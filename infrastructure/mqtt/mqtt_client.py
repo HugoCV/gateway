@@ -17,6 +17,7 @@ MQTT_HOST = cfg["MQTT_HOST"]
 MQTT_PORT = cfg["MQTT_PORT"]
 MQTT_USER = cfg.get("MQTT_USER")
 MQTT_PASS = cfg.get("MQTT_PASS")
+GATEWAY_HEARTBEAT_INTERVAL_SECONDS = 15
 
 
 class MqttClient:
@@ -36,6 +37,7 @@ class MqttClient:
         self.client: Optional[mqtt.Client] = None
         self._loop_started = False
         self._connect_thread: Optional[threading.Thread] = None
+        self._heartbeat_thread: Optional[threading.Thread] = None
         self._connected_evt = threading.Event()
         self._stop_event = threading.Event()
 
@@ -105,6 +107,7 @@ class MqttClient:
     # ---------- Connection ----------
     def connect(self) -> None:
         """Configure the client, TLS/LWT, and background auto-reconnect."""
+        self._stop_event.clear()
         broker = MQTT_HOST
         port = MQTT_PORT
         if not broker:
@@ -119,7 +122,12 @@ class MqttClient:
             self.log("🔐 Credentials set")
 
         lwt_topic = f"tenant/{self.org_id}/gateway/{self.gw_id}/status"
-        self.client.will_set(lwt_topic, json.dumps({"status": "offline"}), qos=1, retain=False)
+        self.client.will_set(
+            lwt_topic,
+            json.dumps({"status": "offline"}),
+            qos=1,
+            retain=True,
+        )
 
         if port == 8883:
             ca = certifi.where()
@@ -139,11 +147,14 @@ class MqttClient:
             self.client.loop_start()
             self._loop_started = True
             self.log("⌛ MQTT loop started (auto-reconnect enabled)")
+        self._start_heartbeat()
 
     def disconnect(self) -> None:
         """Disconnect the MQTT client and stop loop."""
         self._stop_event.set()
         if self.client:
+            if self._connected_evt.is_set():
+                self._publish_gateway_status("offline", wait=True)
             try:
                 self.client.loop_stop()
             except Exception:
@@ -168,11 +179,9 @@ class MqttClient:
 
         client.subscribe(self.gatewayCommandTopic, qos=1)
         self.log(f"Subscribed to commands: {self.gatewayCommandTopic}")
-        # Publish online status
-        online_topic = f"tenant/{self.org_id}/gateway/{self.gw_id}/status"
-        self._publish(online_topic, json.dumps({"status": "online"}), qos=1)
-        self.on_initial_load()
         self._connected_evt.set()
+        self._publish_gateway_status("online")
+        self.on_initial_load()
 
     def on_change_device_connection(
         self,
@@ -204,6 +213,39 @@ class MqttClient:
     def on_log(self, client, userdata, level, buf) -> None:
         if level >= mqtt.MQTT_LOG_INFO:
             self.log(f"[MQTT-{level}] {buf}")
+
+    def _start_heartbeat(self) -> None:
+        if self._heartbeat_thread and self._heartbeat_thread.is_alive():
+            return
+
+        self._heartbeat_thread = threading.Thread(
+            target=self._heartbeat_loop,
+            name="mqtt-gateway-heartbeat",
+            daemon=True,
+        )
+        self._heartbeat_thread.start()
+
+    def _heartbeat_loop(self) -> None:
+        while not self._stop_event.wait(GATEWAY_HEARTBEAT_INTERVAL_SECONDS):
+            if self._connected_evt.is_set():
+                self._publish_gateway_status("online")
+
+    def _publish_gateway_status(self, status: str, wait: bool = False) -> bool:
+        if not self.org_id or not self.gw_id:
+            return False
+
+        topic = f"tenant/{self.org_id}/gateway/{self.gw_id}/status"
+        payload = json.dumps({
+            "status": status,
+            "timestamp": int(time.time()),
+        })
+        return self._publish(
+            topic,
+            payload,
+            qos=1,
+            retain=True,
+            wait=wait,
+        )
 
     def on_message(self, client, userdata, msg):
         print("ON MESSAGE")
@@ -249,16 +291,25 @@ class MqttClient:
         self.log(f"[RX] {msg.topic} ({len(msg.payload)} bytes)")
 
     # ---------- Publish utilities ----------
-    def _publish(self, topic: str, payload: str, qos: int = 1) -> bool:
+    def _publish(
+        self,
+        topic: str,
+        payload: str,
+        qos: int = 1,
+        retain: bool = False,
+        wait: bool = False,
+    ) -> bool:
         if not self.client:
             self.log("⚠️ MQTT client not ready to publish.")
             return False
         try:
-            info = self.client.publish(topic, payload, qos=qos)
+            info = self.client.publish(topic, payload, qos=qos, retain=retain)
             if info.rc != mqtt.MQTT_ERR_SUCCESS:
                 self.log(f"⚠️ publish() failed rc={info.rc} topic={topic}")
                 print(self.log(f"⚠️ publish() failed rc={info.rc} topic={topic}"))
                 return False
+            if wait:
+                info.wait_for_publish(timeout=2)
             return True
         except Exception as e:
             self.log(f"❌ Error publishing to {topic}: {e}")
