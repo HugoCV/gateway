@@ -4,7 +4,6 @@ from pymodbus.client import ModbusTcpClient
 class ModbusTcp:
     RESPONSE_FAILURE_THRESHOLD = 2
     PARTIAL_FAILURE_THRESHOLD = 3
-    MAX_FAILURES_PER_CYCLE = 3
 
     def __init__(self, device, send_signal, log, ip, port, slave_id):
         self.ip = ip
@@ -175,7 +174,6 @@ class ModbusTcp:
             partial_cycles = 0
             while not self._stop_event.is_set():
                 regs_group = {}
-                failed_reads = 0
                 failed_addresses = []
                 for addr in addresses:
                     try:
@@ -183,18 +181,10 @@ class ModbusTcp:
                         if regs is not None:
                             regs_group[addr] = regs[0]
                         else:
-                            failed_reads += 1
                             failed_addresses.append(addr)
                     except Exception as e:
                         self.log(f"❌ Exception polling register {addr}: {e}")
-                        failed_reads += 1
                         failed_addresses.append(addr)
-
-                    if (
-                        not regs_group
-                        and failed_reads >= self.MAX_FAILURES_PER_CYCLE
-                    ):
-                        break
 
                 if regs_group:
                     failed_cycles = 0
