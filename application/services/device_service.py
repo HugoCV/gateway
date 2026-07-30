@@ -63,6 +63,9 @@ class DeviceService:
         self.modbus_tcp: Optional[ModbusTcp] = None
         self.modbus_serial: Optional[ModbusSerial] = None
         self.logo: Optional[LogoModbusClient] = None
+        self.direct_responsive = False
+        self.direct_connection_reason = "awaiting_modbus_response"
+        self._last_published_connection_state = None
 
         # self.base_url = f"http://{self.cc['host']}:{self.cc['httpPort']}/api/dashboard"
         # self.http = HttpClient(self, self._send_signal, self.log)
@@ -152,21 +155,32 @@ class DeviceService:
                 logo_port,
             )
 
-    def update_connected(self) -> None:
-        """Check device connection status (TCP/Serial/LOGO) and notify via MQTT if changed."""
-        prev_connected = getattr(self, "connected", False)
-        prev_connected_logo = getattr(self, "connected_logo", False)
+    def update_direct_connection(self, responsive: bool, reason: str | None = None) -> None:
+        self.direct_responsive = responsive
+        self.direct_connection_reason = None if responsive else reason
+        self.update_connected()
 
-        self.connected = any([
-            self.modbus_tcp and self.modbus_tcp.is_connected(),
-            self.modbus_serial and self.modbus_serial.is_connected()
-        ])
+    def update_connected(self) -> None:
+        """Publish route status based on device responses, not only open transports."""
+        self.connected = self.direct_responsive
         self.connected_logo = bool(self.logo and self.logo.is_connected())
-        if self.connected != prev_connected or self.connected_logo != prev_connected_logo:
+        connection_state = (
+            self.connected,
+            self.connected_logo,
+            self.direct_connection_reason,
+        )
+        if connection_state != self._last_published_connection_state:
             try:
                 status = "online" if self.connected else "offline"
                 logo_status = "online" if self.connected_logo else "offline"
-                self.mqtt.on_change_device_connection(self.serial, status, logo_status)
+                self.mqtt.on_change_device_connection(
+                    self.serial,
+                    status,
+                    logo_status,
+                    self.direct_connection_reason,
+                    "direct",
+                )
+                self._last_published_connection_state = connection_state
             except Exception as e:
                 self.log(f"❌ Error notificando conexión de {self.name}: {e}")
         

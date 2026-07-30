@@ -2,6 +2,9 @@ import time
 import threading
 from pymodbus.client import ModbusTcpClient
 class ModbusTcp:
+    RESPONSE_FAILURE_THRESHOLD = 2
+    MAX_FAILURES_PER_CYCLE = 3
+
     def __init__(self, device, send_signal, log, ip, port, slave_id):
         self.ip = ip
         self.port = port
@@ -167,27 +170,51 @@ class ModbusTcp:
         self.tcp_poll = self.poll_registers(addresses=addrs, interval=self.poll_interval)
     def poll_registers(self, addresses: list[int], interval: float = 0.5):
         def _poll():
-            failure_count = 0
+            failed_cycles = 0
             while not self._stop_event.is_set():
                 regs_group = {}
+                failed_reads = 0
                 for addr in addresses:
                     try:
                         regs = self.read_holding_registers(addr, count=1)
                         if regs is not None:
                             regs_group[addr] = regs[0]
-                            failure_count = 0
                         else:
-                            failure_count += 1
+                            failed_reads += 1
                     except Exception as e:
                         self.log(f"❌ Exception polling register {addr}: {e}")
-                        failure_count += 1
-                if failure_count >= 3:
-                    self.log("⚠️ Modbus TCP parece desconectado")
-                    self.device.update_connected()
-                    self.start()  # relaunch auto_reconnect
+                        failed_reads += 1
+
+                    if (
+                        not regs_group
+                        and failed_reads >= self.MAX_FAILURES_PER_CYCLE
+                    ):
+                        break
+
+                if regs_group:
+                    failed_cycles = 0
+                    self.device.update_direct_connection(True)
+                else:
+                    failed_cycles += 1
+                    if failed_cycles == self.RESPONSE_FAILURE_THRESHOLD:
+                        self.log(
+                            f"⚠️ Sin respuesta Modbus TCP después de "
+                            f"{failed_cycles} ciclos fallidos: device={self.device.serial} "
+                            f"host={self.ip}:{self.port} slaveId={self.slave_id}"
+                        )
+                        self.device.update_direct_connection(
+                            False,
+                            "modbus_no_response",
+                        )
+
+                if failed_cycles >= self.RESPONSE_FAILURE_THRESHOLD:
+                    self.disconnect()
+                    self.start()
                     return
+
                 self._stop_event.wait(interval)
-                self._read_callback(regs_group)
+                if regs_group:
+                    self._read_callback(regs_group)
         thread = threading.Thread(target=_poll, daemon=True)
         thread.start()
         return thread

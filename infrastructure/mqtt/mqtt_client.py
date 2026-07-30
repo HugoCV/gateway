@@ -174,9 +174,27 @@ class MqttClient:
         self.on_initial_load()
         self._connected_evt.set()
 
-    def on_change_device_connection(self, device_serial, status, logo_status):
+    def on_change_device_connection(
+        self,
+        device_serial,
+        status,
+        logo_status,
+        connection_reason=None,
+        channel="direct",
+    ):
         device_connection_topic = self._topic_publish_device_status(self.org_id, self.gw_id, device_serial)
-        self._publish(device_connection_topic, json.dumps({"status": status, "logoStatus": logo_status}), qos=1)
+        payload = {
+            "status": status,
+            "logoStatus": logo_status,
+            "connectionReason": connection_reason,
+            "channel": channel,
+        }
+        serialized_payload = json.dumps(payload)
+        if self._publish(device_connection_topic, serialized_payload, qos=1):
+            self.log(
+                f"📡 [DEVICE-STATUS] topic={device_connection_topic} "
+                f"payload={serialized_payload}"
+            )
 
     def on_disconnect(self, client: mqtt.Client, userdata, flags, reason_code, properties=None) -> None:
         print("on_disconnect mqtt")
