@@ -10,6 +10,7 @@ class ModbusSerial:
     Manages a Modbus RTU connection over a serial port (RS-485).
     """
     RESPONSE_FAILURE_THRESHOLD = 2
+    PARTIAL_FAILURE_THRESHOLD = 3
     MAX_FAILURES_PER_CYCLE = 3
 
     def __init__(self, device, send_signal, log, port, baudrate, slave_id):
@@ -187,9 +188,11 @@ class ModbusSerial:
     def poll_registers(self, addresses: list[int], interval: float = 0.5):
         def _poll():
             failed_cycles = 0
+            partial_cycles = 0
             while not self._stop_event.is_set():
                 regs_group = {}
                 failed_reads = 0
+                failed_addresses = []
                 for addr in addresses:
                     try:
                         regs = self.read_holding_registers(addr, count=1)
@@ -197,9 +200,11 @@ class ModbusSerial:
                             regs_group[addr] = regs[0]
                         else:
                             failed_reads += 1
+                            failed_addresses.append(addr)
                     except Exception as e:
                         self.log(f"❌ Error polling {addr}: {e}")
                         failed_reads += 1
+                        failed_addresses.append(addr)
 
                     if (
                         not regs_group
@@ -209,8 +214,35 @@ class ModbusSerial:
 
                 if regs_group:
                     failed_cycles = 0
-                    self.device.update_direct_connection(True)
+                    if failed_addresses:
+                        partial_cycles += 1
+                        if partial_cycles >= self.PARTIAL_FAILURE_THRESHOLD:
+                            failed_registers = self._describe_registers(
+                                failed_addresses
+                            )
+                            if partial_cycles == self.PARTIAL_FAILURE_THRESHOLD:
+                                self.log(
+                                    f"⚠️ Lectura Modbus RTU parcial: "
+                                    f"device={self.device.serial} "
+                                    f"failedRegisters={failed_registers}"
+                                )
+                            self.device.update_direct_connection(
+                                True,
+                                "partial_modbus_failure",
+                                failed_registers,
+                            )
+                        else:
+                            self.device.update_direct_connection(True)
+                    else:
+                        if partial_cycles >= self.PARTIAL_FAILURE_THRESHOLD:
+                            self.log(
+                                f"✅ Lectura Modbus RTU completa recuperada: "
+                                f"device={self.device.serial}"
+                            )
+                        partial_cycles = 0
+                        self.device.update_direct_connection(True)
                 else:
+                    partial_cycles = 0
                     failed_cycles += 1
                     if failed_cycles == self.RESPONSE_FAILURE_THRESHOLD:
                         self.log(
@@ -233,6 +265,14 @@ class ModbusSerial:
         thread = threading.Thread(target=_poll, daemon=True)
         thread.start()
         return thread
+
+    def _describe_registers(self, addresses: list[int]) -> list[dict]:
+        failed = set(addresses)
+        return [
+            {"name": name, "address": address}
+            for name, address in self._get_signal_map().items()
+            if address in failed
+        ]
     # ---------------------------
     # Utilities
     # ---------------------------

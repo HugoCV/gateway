@@ -190,6 +190,7 @@ class MqttClient:
         logo_status,
         connection_reason=None,
         channel="direct",
+        failed_registers=None,
     ):
         device_connection_topic = self._topic_publish_device_status(self.org_id, self.gw_id, device_serial)
         payload = {
@@ -197,6 +198,7 @@ class MqttClient:
             "logoStatus": logo_status,
             "connectionReason": connection_reason,
             "channel": channel,
+            "failedRegisters": failed_registers or [],
         }
         serialized_payload = json.dumps(payload)
         if self._publish(device_connection_topic, serialized_payload, qos=1):

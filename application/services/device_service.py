@@ -65,6 +65,7 @@ class DeviceService:
         self.logo: Optional[LogoModbusClient] = None
         self.direct_responsive = False
         self.direct_connection_reason = "awaiting_modbus_response"
+        self.direct_failed_registers = []
         self._last_published_connection_state = None
 
         # self.base_url = f"http://{self.cc['host']}:{self.cc['httpPort']}/api/dashboard"
@@ -155,9 +156,19 @@ class DeviceService:
                 logo_port,
             )
 
-    def update_direct_connection(self, responsive: bool, reason: str | None = None) -> None:
+    def update_direct_connection(
+        self,
+        responsive: bool,
+        reason: str | None = None,
+        failed_registers=None,
+    ) -> None:
         self.direct_responsive = responsive
-        self.direct_connection_reason = None if responsive else reason
+        self.direct_connection_reason = reason
+        self.direct_failed_registers = (
+            list(failed_registers)
+            if isinstance(failed_registers, list)
+            else []
+        )
         self.update_connected()
 
     def update_connected(self) -> None:
@@ -168,6 +179,10 @@ class DeviceService:
             self.connected,
             self.connected_logo,
             self.direct_connection_reason,
+            tuple(
+                (register.get("name"), register.get("address"))
+                for register in self.direct_failed_registers
+            ),
         )
         if connection_state != self._last_published_connection_state:
             try:
@@ -179,6 +194,7 @@ class DeviceService:
                     logo_status,
                     self.direct_connection_reason,
                     "direct",
+                    self.direct_failed_registers,
                 )
                 self._last_published_connection_state = connection_state
             except Exception as e:
