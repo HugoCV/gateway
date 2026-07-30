@@ -206,11 +206,7 @@ class MqttClient:
             "failedRegisters": failed_registers or [],
         }
         serialized_payload = json.dumps(payload)
-        if self._publish(device_connection_topic, serialized_payload, qos=1):
-            self.log(
-                f"📡 [DEVICE-STATUS] topic={device_connection_topic} "
-                f"payload={serialized_payload}"
-            )
+        self._publish(device_connection_topic, serialized_payload, qos=1)
 
     def on_disconnect(self, client: mqtt.Client, userdata, flags, reason_code, properties=None) -> None:
         print("on_disconnect mqtt")
