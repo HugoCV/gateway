@@ -97,20 +97,19 @@ class AppController:
             try:
                 if normalized_value == "turnon":
                     self.log(f"El dispositivo {ds.name} se mandó a encender")
-                    succeeded = ds.turn_on()
                 elif normalized_value == "turnoff":
                     self.log(f"El dispositivo {ds.name} se mandó a apagar")
-                    succeeded = ds.turn_off()
-                elif normalized_value == "restart" and not channel:
+                elif normalized_value == "restart":
                     self.log(f"El dispositivo {ds.name} se mandó a reiniciar")
-                    succeeded = ds.restart()
                 else:
                     self.log(
                         f"Ejecutando comando {value}.{command_value} "
                         f"en canal {channel or 'auto'} para {ds.name}"
                     )
-                    succeeded = ds.execute_command(value, channel, command_value)
-                if not succeeded:
+                succeeded, reason = ds.execute_command_with_confirmation(
+                    value, channel, command_value
+                )
+                if not succeeded and not reason:
                     reason = "device_write_failed"
             except Exception as error:
                 reason = "command_exception"

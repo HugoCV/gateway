@@ -1,6 +1,7 @@
 # device_service.py
 import threading
-from typing import Dict, Any, Optional
+import time
+from typing import Dict, Any, Optional, Tuple
 from threading import RLock
 
 # from infrastructure.http.http_client import HttpClient
@@ -312,6 +313,192 @@ class DeviceService:
             return self.logo.execute_command(command_key, value_name)
 
         return False
+
+    @staticmethod
+    def _values_equal(left, right) -> bool:
+        if type(left) is type(right):
+            return left == right
+        try:
+            return float(left) == float(right)
+        except (TypeError, ValueError):
+            return str(left) == str(right)
+
+    @classmethod
+    def _condition_is_active(cls, raw_value, condition: Dict[str, Any]) -> bool:
+        operator = condition.get("operator")
+        value = condition.get("value")
+        values = condition.get("values") or []
+
+        if operator == "equals":
+            return cls._values_equal(raw_value, value)
+        if operator == "notEquals":
+            return not cls._values_equal(raw_value, value)
+        if operator == "in":
+            return any(cls._values_equal(raw_value, item) for item in values)
+        if operator == "notIn":
+            return not any(cls._values_equal(raw_value, item) for item in values)
+        if operator == "greaterThan":
+            try:
+                return float(raw_value) > float(value)
+            except (TypeError, ValueError):
+                return False
+        if operator == "lessThan":
+            try:
+                return float(raw_value) < float(value)
+            except (TypeError, ValueError):
+                return False
+        if operator == "bitSet":
+            try:
+                return (int(raw_value) & int(value)) == int(value)
+            except (TypeError, ValueError):
+                return False
+        return False
+
+    def _get_channel_config(self, channel: Optional[str]) -> Tuple[str, Optional[Dict[str, Any]]]:
+        channel_key = channel or "direct"
+        modbus_config = self.device.get("modbusConfig")
+        channels = (
+            modbus_config.get("channels")
+            if isinstance(modbus_config, dict)
+            else None
+        )
+        if not isinstance(channels, dict):
+            return channel_key, None
+        config = channels.get(channel_key)
+        return channel_key, config if isinstance(config, dict) else None
+
+    def _read_channel_register(
+        self, channel: str, config: Dict[str, Any], address: int
+    ):
+        if channel == "logo":
+            if not self.logo or not self.logo.is_connected():
+                return None
+            values = self.logo.read_registers(address, 1)
+            return values[0] if values else None
+
+        protocol = config.get("protocol")
+        if protocol == "modbus-tcp":
+            if not self.modbus_tcp or not self.modbus_tcp.is_connected():
+                return None
+            values = self.modbus_tcp.read_holding_registers(address, count=1)
+            return values[0] if values else None
+
+        if protocol == "modbus-rtu":
+            if not self.modbus_serial or not self.modbus_serial.is_connected():
+                return None
+            values = self.modbus_serial.read_holding_registers(address, count=1)
+            return values[0] if values else None
+
+        return None
+
+    def _get_fault_checks(
+        self, config: Dict[str, Any]
+    ) -> list[Tuple[Dict[str, Any], Optional[Dict[str, Any]]]]:
+        registers = config.get("registers")
+        events = config.get("events")
+        if not isinstance(registers, dict):
+            return []
+
+        checks = []
+        if isinstance(events, dict):
+            for rule in events.values():
+                if not isinstance(rule, dict) or rule.get("type") != "fault":
+                    continue
+                register = registers.get(rule.get("signal"))
+                if isinstance(register, dict):
+                    checks.append((register, rule.get("activeWhen")))
+
+        if checks:
+            return checks
+
+        # Configuraciones existentes pueden expresar el estado seguro mediante
+        # el significado del registro, sin asumir que un número fijo es "sin falla".
+        fault_register = registers.get("fault")
+        if not isinstance(fault_register, dict):
+            return []
+        types = fault_register.get("types")
+        if not isinstance(types, dict):
+            return []
+
+        safe_meanings = {"none", "no fault", "sin falla", "ninguna", "ok"}
+        safe_values = [
+            raw_value
+            for raw_value, meaning in types.items()
+            if str(meaning).strip().lower() in safe_meanings
+        ]
+        if not safe_values:
+            return []
+
+        return [(fault_register, {"operator": "notIn", "values": safe_values})]
+
+    def verify_faults_cleared(
+        self,
+        channel: Optional[str],
+        attempts: int = 6,
+        interval: float = 0.5,
+    ) -> Tuple[bool, Optional[str]]:
+        channel_key, config = self._get_channel_config(channel)
+        if not config:
+            return True, None
+
+        checks = self._get_fault_checks(config)
+        if not checks:
+            return True, None
+
+        saw_response = False
+        saw_active_fault = False
+        consecutive_clear_reads = 0
+        for _ in range(attempts):
+            active_fault = False
+            complete_read = True
+
+            for register, condition in checks:
+                try:
+                    address = int(register["address"])
+                except (KeyError, TypeError, ValueError):
+                    complete_read = False
+                    continue
+
+                raw_value = self._read_channel_register(
+                    channel_key, config, address
+                )
+                if raw_value is None:
+                    complete_read = False
+                    continue
+
+                saw_response = True
+                if self._condition_is_active(raw_value, condition or {}):
+                    active_fault = True
+                    saw_active_fault = True
+
+            if complete_read and not active_fault:
+                consecutive_clear_reads += 1
+                if consecutive_clear_reads >= 2:
+                    return True, None
+            else:
+                consecutive_clear_reads = 0
+            time.sleep(interval)
+
+        if not saw_response:
+            return False, "verification_read_failed"
+        if saw_active_fault:
+            return False, "fault_still_active"
+        return False, "verification_read_failed"
+
+    def execute_command_with_confirmation(
+        self,
+        command_name: str,
+        channel: Optional[str] = None,
+        value_name: str = "on",
+    ) -> Tuple[bool, Optional[str]]:
+        succeeded = self.execute_command(command_name, channel, value_name)
+        if not succeeded:
+            return False, "device_write_failed"
+
+        if (command_name or "").strip().lower() == "restart":
+            return self.verify_faults_cleared(channel)
+
+        return True, None
 
     # ---------------------------
     # Connection helpers (connect/disconnect)
