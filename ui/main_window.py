@@ -42,6 +42,13 @@ class MainWindow(tk.Tk):
         self._build_device_list_widget()
         self.log_widget = self._build_log_widget()
         self.controller = AppController(self)
+        self.protocol("WM_DELETE_WINDOW", self._close)
+
+    def _close(self):
+        """Close hardware and network workers before destroying the window."""
+        if hasattr(self, "controller"):
+            self.controller.close()
+        self.destroy()
 
     def _build_gateway_config_widget(self):
         """Create the gateway configuration widget."""

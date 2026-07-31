@@ -1,4 +1,6 @@
 # drivers/logo_modbus.py
+from __future__ import annotations
+
 import threading
 import time
 from pymodbus.client import ModbusTcpClient

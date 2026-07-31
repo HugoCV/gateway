@@ -3,6 +3,9 @@ import os
 import signal
 import time
 import argparse
+import fcntl
+import tempfile
+from pathlib import Path
 from threading import Event
 import traceback
 
@@ -13,6 +16,45 @@ except Exception as e:
     print("[main] Error importando AppController:", e)
     traceback.print_exc()
     AppController = None
+
+
+LOCK_PATH = (
+    Path(tempfile.gettempdir()) / f"alrotek-gateway-{os.getuid()}.lock"
+)
+
+
+def acquire_runtime_lock():
+    """Prevent GUI and headless modes from accessing the same ports together."""
+    lock_file = LOCK_PATH.open("w")
+    try:
+        fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        lock_file.close()
+        return None
+    lock_file.write(str(os.getpid()))
+    lock_file.flush()
+    return lock_file
+
+
+def notify_already_running(mode):
+    message = "Gateway ya está ejecutándose en otro proceso."
+    print(f"[main] {message}")
+    if mode != "gui":
+        return
+    try:
+        import tkinter as tk
+        from tkinter import messagebox
+
+        root = tk.Tk()
+        root.withdraw()
+        messagebox.showinfo(
+            "Gateway en ejecución",
+            "Gateway ya está activo en segundo plano. "
+            "Detenga el servicio antes de abrir la interfaz operativa.",
+        )
+        root.destroy()
+    except Exception:
+        pass
 
 
 def run_headless():
@@ -37,7 +79,7 @@ def run_headless():
             print("[headless] terminado.")
         return
 
-    ctrl = AppController(ui=None)  # without GUI
+    ctrl = AppController(window=None)
     try:
         ctrl.run(stop_event=stop_event)  # blocking method
     finally:
@@ -64,19 +106,29 @@ def main():
     )
     args = parser.parse_args()
 
-    if args.mode == "gui":
-        try:
-            run_gui()
-        except Exception as e:
-            # Fallback to headless mode when DISPLAY is not available.
-            if "no display name and no $display" in str(e).lower():
-                print("[main] No hay DISPLAY → cambiando a modo headless")
-                run_headless()
-            else:
-                raise
-    else:
-        run_headless()
+    runtime_lock = acquire_runtime_lock()
+    if runtime_lock is None:
+        notify_already_running(args.mode)
+        return 1
+
+    try:
+        if args.mode == "gui":
+            try:
+                run_gui()
+            except Exception as e:
+                # Fallback to headless mode when DISPLAY is not available.
+                if "no display name and no $display" in str(e).lower():
+                    print("[main] No hay DISPLAY → cambiando a modo headless")
+                    run_headless()
+                else:
+                    raise
+        else:
+            run_headless()
+    finally:
+        fcntl.flock(runtime_lock.fileno(), fcntl.LOCK_UN)
+        runtime_lock.close()
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

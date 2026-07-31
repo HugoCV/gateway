@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import asyncio, threading, aiohttp
 from typing import Optional
 

@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import threading
 from pymodbus.client import ModbusTcpClient
 class ModbusTcp:

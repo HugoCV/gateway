@@ -1,4 +1,6 @@
 # device_service.py
+from __future__ import annotations
+
 import threading
 import time
 from typing import Dict, Any, Optional, Tuple
