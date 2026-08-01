@@ -1,4 +1,8 @@
 import tkinter as tk
+import queue
+import re
+import time
+from datetime import datetime
 from tkinter import ttk, scrolledtext
 from application.app_controller import AppController
 # from infrastructure.modbus.modbus_tcp import ModbusTcp
@@ -32,12 +36,17 @@ class MainWindow(tk.Tk):
         self.style.map("Treeview", background=[('selected', '#0078D7')])
 
         self.device_tree_tags_configured = False
+        self._key_event_ids = []
+        self._last_key_events = {}
+        self._ui_queue = queue.Queue()
 
 
         self._build_gateway_config_widget()
         self._build_connectivity_widget()
+        self._build_key_events_widget()
         self._build_device_list_widget()
         self.log_widget = self._build_log_widget()
+        self.after(100, self._drain_ui_queue)
         self.controller = AppController(self)
         self.protocol("WM_DELETE_WINDOW", self._close)
 
@@ -134,7 +143,54 @@ class MainWindow(tk.Tk):
         tree_frame.grid_rowconfigure(0, weight=1)
         tree_frame.grid_columnconfigure(0, weight=1)
 
+    def _build_key_events_widget(self):
+        """Show a concise, de-duplicated view of operational events."""
+        frame = ttk.LabelFrame(self, text="Eventos importantes", padding=12)
+        frame.pack(fill="x", padx=15, pady=(10, 5))
+
+        toolbar = ttk.Frame(frame)
+        toolbar.pack(fill="x", pady=(0, 8))
+        ttk.Label(
+            toolbar,
+            text="Conexiones, comandos, cambios de configuración y errores",
+        ).pack(side="left")
+        ttk.Button(
+            toolbar,
+            text="Limpiar",
+            command=self._clear_key_events,
+        ).pack(side="right")
+
+        columns = ("time", "level", "message")
+        self.key_events_tree = ttk.Treeview(
+            frame,
+            columns=columns,
+            show="headings",
+            height=6,
+        )
+        self.key_events_tree.heading("time", text="Hora")
+        self.key_events_tree.heading("level", text="Tipo")
+        self.key_events_tree.heading("message", text="Evento")
+        self.key_events_tree.column("time", width=85, anchor="center", stretch=False)
+        self.key_events_tree.column("level", width=105, anchor="center", stretch=False)
+        self.key_events_tree.column("message", width=850, stretch=True)
+        self.key_events_tree.tag_configure("error", foreground="#b71c1c")
+        self.key_events_tree.tag_configure("warning", foreground="#a05a00")
+        self.key_events_tree.tag_configure("success", foreground="#1b5e20")
+        self.key_events_tree.tag_configure("info", foreground="#0d47a1")
+
+        scrollbar = ttk.Scrollbar(
+            frame,
+            orient="vertical",
+            command=self.key_events_tree.yview,
+        )
+        self.key_events_tree.configure(yscrollcommand=scrollbar.set)
+        self.key_events_tree.pack(side="left", fill="x", expand=True)
+        scrollbar.pack(side="right", fill="y")
+
     def update_device_list(self, devices):
+        self._ui_queue.put(("devices", list(devices)))
+
+    def _apply_device_list(self, devices):
         if not self.device_tree_tags_configured:
             # Configure color tags the first time.
             self.device_tree.tag_configure('online', foreground='green')
@@ -173,13 +229,100 @@ class MainWindow(tk.Tk):
         widget.pack(fill="x", padx=15, pady=(5, 15))
         return widget
 
-    def _log(self, message):
+    @staticmethod
+    def _classify_key_event(message):
+        normalized = message.lower()
+        noisy_fragments = (
+            "error polling ",
+            "exception polling register",
+            "error reading registers",
+            "error en read_holding_registers",
+            "excepción en read_holding_registers",
+        )
+        if any(fragment in normalized for fragment in noisy_fragments):
+            return None
+
+        if "❌" in message or any(
+            word in normalized
+            for word in ("error", "falló", "failed", "no se pudo", "missing")
+        ):
+            return "error"
+        if "⚠" in message or any(
+            word in normalized
+            for word in ("desconect", "offline", "sin respuesta", "sin conexión")
+        ):
+            return "warning"
+        if "✅" in message or any(
+            word in normalized
+            for word in ("connected", "online", "conexión establecida", "recuperada")
+        ):
+            return "success"
+        if any(
+            word in normalized
+            for word in (
+                "comando",
+                "command-result",
+                "mqtt-cmd",
+                "se mandó a",
+                "configuración",
+                "reinici",
+                "start modbus",
+                "stop modbus",
+                "gateway ejecutándose",
+            )
+        ):
+            return "info"
+        return None
+
+    def _append_key_event(self, message, level):
+        now = time.monotonic()
+        dedupe_key = re.sub(
+            r"reintento en \d+s",
+            "reintento",
+            message.lower(),
+        )
+        if now - self._last_key_events.get(dedupe_key, 0) < 15:
+            return
+        self._last_key_events[dedupe_key] = now
+
+        labels = {
+            "error": "Error",
+            "warning": "Advertencia",
+            "success": "Correcto",
+            "info": "Información",
+        }
+        item = self.key_events_tree.insert(
+            "",
+            "end",
+            values=(datetime.now().strftime("%H:%M:%S"), labels[level], message),
+            tags=(level,),
+        )
+        self._key_event_ids.append(item)
+        while len(self._key_event_ids) > 50:
+            oldest = self._key_event_ids.pop(0)
+            self.key_events_tree.delete(oldest)
+        self.key_events_tree.see(item)
+
+    def _clear_key_events(self):
+        for item in self.key_events_tree.get_children():
+            self.key_events_tree.delete(item)
+        self._key_event_ids.clear()
+        self._last_key_events.clear()
+
+    def _append_log(self, message):
         self.log_widget.configure(state="normal")
         self.log_widget.insert("end", message + "\n")
         self.log_widget.configure(state="disabled")
         self.log_widget.yview("end")
 
-    def update_connectivity_status(self, is_connected: bool, network_name: str):
+        level = self._classify_key_event(message)
+        if level:
+            self._append_key_event(message, level)
+
+    def _log(self, message):
+        self._ui_queue.put(("log", str(message)))
+
+    def _apply_connectivity_status(self, is_connected, network_name):
         """Update the UI with the internet connection status."""
         if is_connected:
             self.conn_status_var.set("Conectado")
@@ -189,6 +332,25 @@ class MainWindow(tk.Tk):
             self.conn_status_var.set("Desconectado")
             self.conn_status_label.config(foreground="red")
             self.conn_network_var.set(network_name)
+
+    def update_connectivity_status(self, is_connected: bool, network_name: str):
+        self._ui_queue.put(
+            ("connectivity", (is_connected, network_name))
+        )
+
+    def _drain_ui_queue(self):
+        try:
+            while True:
+                event, payload = self._ui_queue.get_nowait()
+                if event == "log":
+                    self._append_log(payload)
+                elif event == "connectivity":
+                    self._apply_connectivity_status(*payload)
+                elif event == "devices":
+                    self._apply_device_list(payload)
+        except queue.Empty:
+            pass
+        self.after(100, self._drain_ui_queue)
 
 if __name__ == "__main__":
     app = MainWindow()
