@@ -41,9 +41,6 @@ class AppController:
         if self.window:
             self.window.org_id_var.set(self.gateway_cfg.get("organizationId", ""))
             self.window.gw_id_var.set(self.gateway_cfg.get("gatewayId", ""))
-            self.window.update_known_networks_list(
-                self.gateway_cfg.get("known_networks", {})
-            )
 
         self.connectivity_monitor = ConnectivityMonitor(
             log_callback=self.log,
@@ -225,9 +222,6 @@ class AppController:
         save_gateway(current_config)
 
         self.gateway_cfg = current_config
-        if self.window:
-            self.window.update_known_networks_list(networks)
-        
         # Update the connectivity monitor with the new networks in real time.
         self.connectivity_monitor.known_networks = networks
         self.log("ℹ️ Lista de redes Wi-Fi actualizada.")
