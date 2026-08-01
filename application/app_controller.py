@@ -140,11 +140,11 @@ class AppController:
 
             try:
                 if normalized_value == "turnon":
-                    self.log(f"El dispositivo {ds.name} se mandó a encender")
+                    self.log(f"Intentando encender el dispositivo {ds.name}")
                 elif normalized_value == "turnoff":
-                    self.log(f"El dispositivo {ds.name} se mandó a apagar")
+                    self.log(f"Intentando apagar el dispositivo {ds.name}")
                 elif normalized_value == "restart":
-                    self.log(f"El dispositivo {ds.name} se mandó a reiniciar")
+                    self.log(f"Intentando reiniciar el dispositivo {ds.name}")
                 else:
                     self.log(
                         f"Ejecutando comando {value}.{command_value} "

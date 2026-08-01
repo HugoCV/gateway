@@ -345,9 +345,24 @@ class MqttClient:
         serialized_payload = json.dumps(payload)
         published = self._publish(topic, serialized_payload, qos=1)
         if published:
+            reason_messages = {
+                "device_not_found": "el dispositivo no existe en el gateway",
+                "device_write_failed": "no se pudo escribir el comando por Modbus",
+                "fault_still_active": "la falla continúa activa",
+                "verification_read_failed": "no se pudo leer el estado para confirmar",
+                "command_exception": "ocurrió un error al ejecutar el comando",
+            }
+            result_detail = "comando confirmado"
+            if status == "failed":
+                result_detail = reason_messages.get(
+                    reason,
+                    "el gateway no pudo confirmar el comando",
+                )
             self.log(
                 f"📡 [COMMAND-RESULT] device={device_serial} "
-                f"commandId={command_id} status={status}"
+                f"command={command_name} commandId={command_id} "
+                f"status={status} reason={reason or '-'} "
+                f"detail={result_detail}"
             )
         return published
 
