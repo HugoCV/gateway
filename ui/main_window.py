@@ -20,6 +20,12 @@ class MainWindow(tk.Tk):
         self.style.configure("TLabel", font=("Segoe UI", 10), foreground="#222")
         self.style.configure("TEntry", font=("Segoe UI", 10), padding=5)
         self.style.configure("TButton", font=("Segoe UI", 10), padding=6)
+        self.style.configure(
+            "Section.TButton",
+            font=("Segoe UI", 11, "bold"),
+            padding=(12, 10),
+            anchor="w",
+        )
         self.style.configure("TCombobox", font=("Segoe UI", 10))
         self.style.map("TButton",
             background=[("active", "#d9d9d9"), ("pressed", "#c0c0c0")],
@@ -36,6 +42,7 @@ class MainWindow(tk.Tk):
         self.style.map("Treeview", background=[('selected', '#0078D7')])
 
         self.device_tree_tags_configured = False
+        self._collapsible_sections = []
         self._key_event_ids = []
         self._last_key_events = {}
         self._ui_queue = queue.Queue()
@@ -56,10 +63,41 @@ class MainWindow(tk.Tk):
             self.controller.close()
         self.destroy()
 
+    def _create_collapsible_section(self, title, pady=5):
+        """Create a section whose contents are hidden until its header is clicked."""
+        container = ttk.Frame(self)
+        container.pack(fill="x", padx=15, pady=pady)
+
+        body = ttk.Frame(container, padding=15, relief="groove", borderwidth=1)
+        expanded = tk.BooleanVar(value=False)
+        title_var = tk.StringVar(value=f"▶  {title}")
+
+        def toggle():
+            if expanded.get():
+                body.pack_forget()
+                expanded.set(False)
+                title_var.set(f"▶  {title}")
+            else:
+                body.pack(fill="x", pady=(2, 0))
+                expanded.set(True)
+                title_var.set(f"▼  {title}")
+
+        header = ttk.Button(
+            container,
+            textvariable=title_var,
+            command=toggle,
+            style="Section.TButton",
+        )
+        header.pack(fill="x")
+        self._collapsible_sections.append((container, header, body, expanded))
+        return body
+
     def _build_gateway_config_widget(self):
         """Create the gateway configuration widget."""
-        frame = ttk.LabelFrame(self, text="Configuración de Gateway", padding=15)
-        frame.pack(fill="x", padx=15, pady=(15, 5))
+        frame = self._create_collapsible_section(
+            "Configuración de Gateway",
+            pady=(15, 5),
+        )
 
         frame.columnconfigure(1, weight=1)
 
@@ -80,8 +118,7 @@ class MainWindow(tk.Tk):
 
     def _build_connectivity_widget(self):
         """Create the connectivity status widget."""
-        frame = ttk.LabelFrame(self, text="Estado de la Conexión", padding=15)
-        frame.pack(fill="x", padx=15, pady=5)
+        frame = self._create_collapsible_section("Estado de la Conexión")
 
         frame.columnconfigure(1, weight=1)
 
@@ -98,8 +135,10 @@ class MainWindow(tk.Tk):
 
     def _build_device_list_widget(self):
         """Create the device list widget."""
-        frame = ttk.LabelFrame(self, text="Dispositivos Conectados", padding=15)
-        frame.pack(fill="x", padx=15, pady=(15, 5))
+        frame = self._create_collapsible_section(
+            "Dispositivos Conectados",
+            pady=(15, 5),
+        )
 
         # Frame for the Treeview and scrollbar
         tree_frame = ttk.Frame(frame)
@@ -145,8 +184,10 @@ class MainWindow(tk.Tk):
 
     def _build_key_events_widget(self):
         """Show a concise, de-duplicated view of operational events."""
-        frame = ttk.LabelFrame(self, text="Eventos importantes", padding=12)
-        frame.pack(fill="x", padx=15, pady=(10, 5))
+        frame = self._create_collapsible_section(
+            "Eventos importantes",
+            pady=(10, 5),
+        )
 
         toolbar = ttk.Frame(frame)
         toolbar.pack(fill="x", pady=(0, 8))
