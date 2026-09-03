@@ -3,7 +3,7 @@ set -euo pipefail
 
 APP_NAME="gateway"
 REPO_URL="${GATEWAY_REPO_URL:-https://github.com/HugoCV/gateway.git}"
-REPO_BRANCH="${GATEWAY_BRANCH:-test}"
+REPO_BRANCH="${GATEWAY_BRANCH:-main}"
 INSTALL_DIR="${GATEWAY_INSTALL_DIR:-/opt/${APP_NAME}}"
 DESKTOP_USER="${SUDO_USER:-$(whoami)}"
 DESKTOP_HOME="$(eval echo ~"${DESKTOP_USER}")"
@@ -25,6 +25,10 @@ run_as_user() {
 log "[1/7] Installing system dependencies..."
 sudo apt-get update | tee -a "${LOG_FILE}"
 sudo apt-get install -y git python3 python3-venv python3-pip python3-tk | tee -a "${LOG_FILE}"
+python3 -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 10) else 1)' || {
+  log "ERROR: Gateway requires Python 3.10 or newer."
+  exit 1
+}
 
 log "[2/7] Cloning or updating repository in ${INSTALL_DIR} from ${REPO_BRANCH}..."
 sudo mkdir -p "${INSTALL_DIR}"

@@ -2,6 +2,7 @@
 set -euo pipefail
 
 APP_NAME="gateway"
+MIN_PYTHON="3.10"
 INSTALL_DIR="/opt/${APP_NAME}"
 DESKTOP_USER="${SUDO_USER:-$(whoami)}"
 DESKTOP_HOME="$(eval echo ~${DESKTOP_USER})"
@@ -10,6 +11,11 @@ DESKTOP_FILE="${AUTOSTART_DIR}/${APP_NAME}.desktop"
 EXECUTABLE_PATH="/usr/local/bin/${APP_NAME}"
 
 echo "==> Instalando/actualizando ${APP_NAME} para usuario: ${DESKTOP_USER}"
+
+python3 -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 10) else 1)' || {
+  echo "ERROR: Gateway requiere Python ${MIN_PYTHON} o superior." >&2
+  exit 1
+}
 
 # 1) Copiar proyecto a /opt/gateway
 echo "==> Copiando proyecto..."
