@@ -59,6 +59,7 @@ dotenv environment files
 Gateway configuration
 
 gateway_config.json
+/data/gateway.json
 
 Logs
 
@@ -75,4 +76,3 @@ OS generated files
 
 .DS_Store
 Thumbs.db
-

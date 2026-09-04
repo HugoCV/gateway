@@ -5,7 +5,7 @@ import socket
 import time
 import os
 import threading
-from typing import Callable, Dict
+from typing import Callable
 
 class ConnectivityMonitor:
     """Monitors the internet connection and takes action to restore it if lost.
@@ -15,14 +15,12 @@ class ConnectivityMonitor:
         log_callback: Callable[[str], None],
         status_callback: Callable[[bool, str], None] | None = None,
         wifi_interface: str = "wlan0",
-        known_networks: Dict[str, str] = None,
         check_interval: int = 60,
         reboot_timeout: int = 3600
     ):
         self.log = log_callback
         self.wifi_interface = wifi_interface
         self.status_callback = status_callback
-        self.known_networks = known_networks or {}
         self.check_interval = check_interval
         self.reboot_timeout = reboot_timeout
         
@@ -93,34 +91,6 @@ class ConnectivityMonitor:
         except subprocess.CalledProcessError as e:
             self.log(f"❌ Error reiniciando interfaz: {e}")
 
-    def _connect_to_known_networks(self) -> bool:
-        """Tries to connect to one of the known Wi-Fi networks."""
-        if not self.known_networks:
-            return False
-            
-        for ssid, password in self.known_networks.items():
-            self.log(f"📶 Intentando conectar a la red: {ssid}...")
-            try:
-                subprocess.run(["sudo", "wpa_cli", "-i", self.wifi_interface, "remove_network", "all"], stdout=subprocess.DEVNULL)
-                net_id_output = subprocess.run(["sudo", "wpa_cli", "-i", self.wifi_interface, "add_network"], check=True, capture_output=True, text=True)
-                net_id = net_id_output.stdout.strip()
-
-                subprocess.run(["sudo", "wpa_cli", "-i", self.wifi_interface, "set_network", net_id, "ssid", f'"{ssid}"'], check=True)
-                subprocess.run(["sudo", "wpa_cli", "-i", self.wifi_interface, "set_network", net_id, "psk", f'"{password}"'], check=True)
-                subprocess.run(["sudo", "wpa_cli", "-i", self.wifi_interface, "enable_network", net_id], check=True)
-                subprocess.run(["sudo", "wpa_cli", "-i", self.wifi_interface, "select_network", net_id], check=True)
-
-                self.log(f"⏳ Esperando conexión a {ssid}...")
-                time.sleep(15) # Give time for the connection to be established
-
-                if self._is_connected():
-                    self.status_callback and self.status_callback(True, ssid)
-                    self.log(f"✅ Conectado a {ssid}.")
-                    return True
-            except subprocess.CalledProcessError as e:
-                self.log(f"❌ Falló el comando de conexión a {ssid}: {e}")
-        return False
-
     def _restart_device(self):
         """Reboots the operating system."""
         self.log(f"🔁 Reiniciando equipo (más de {self.reboot_timeout}s sin conexión).")
@@ -149,8 +119,7 @@ class ConnectivityMonitor:
                     self._last_ssid = "Ninguna"
 
                 self.disconnected_time += self.check_interval
-                if not self._connect_to_known_networks():
-                    self._restart_wifi_interface()
+                self._restart_wifi_interface()
                 
                 if self.disconnected_time >= self.reboot_timeout:
                     self._restart_device()
@@ -165,7 +134,6 @@ if __name__ == '__main__':
         
     monitor = ConnectivityMonitor(
         log_callback=simple_logger,
-        known_networks={"Chaves 5G": "qwerty25"}
     )
     monitor.start()
     

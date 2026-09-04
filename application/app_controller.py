@@ -44,7 +44,6 @@ class AppController:
 
         self.connectivity_monitor = ConnectivityMonitor(
             log_callback=self.log,
-            known_networks=self.gateway_cfg.get("known_networks", {}),
             status_callback=(
                 self.window.update_connectivity_status if self.window else None
             ),
@@ -198,7 +197,6 @@ class AppController:
         org_id = self.window.org_id_var.get()
         gw_id = self.window.gw_id_var.get()
 
-        # Preserve known networks and other settings that were already saved.
         current_config = get_gateway()
         current_config["organizationId"] = org_id
         current_config["gatewayId"] = gw_id
@@ -213,42 +211,6 @@ class AppController:
     # === MQTT ===
     def on_connect_mqtt(self):
         self.mqtt_handler.connect()
-
-    # === Known Networks Management ===
-    def _update_and_save_networks(self, networks):
-        """Update networks in config, UI, and monitor, then save the file."""
-        current_config = get_gateway()
-        current_config["known_networks"] = networks
-        save_gateway(current_config)
-
-        self.gateway_cfg = current_config
-        # Update the connectivity monitor with the new networks in real time.
-        self.connectivity_monitor.known_networks = networks
-        self.log("ℹ️ Lista de redes Wi-Fi actualizada.")
-
-    def on_add_network(self, ssid, password):
-        networks = self.gateway_cfg.get("known_networks", {})
-        if ssid in networks:
-            self.log(f"⚠️ La red '{ssid}' ya existe. Use 'Editar' para modificarla.")
-            return
-        networks[ssid] = password
-        self._update_and_save_networks(networks)
-
-    def on_edit_network(self, old_ssid, new_ssid, new_password):
-        networks = self.gateway_cfg.get("known_networks", {})
-        if old_ssid != new_ssid and new_ssid in networks:
-            self.log(f"⚠️ Ya existe una red con el nombre '{new_ssid}'.")
-            return
-        if old_ssid in networks:
-            del networks[old_ssid]
-        networks[new_ssid] = new_password
-        self._update_and_save_networks(networks)
-
-    def on_remove_network(self, ssid):
-        networks = self.gateway_cfg.get("known_networks", {})
-        if ssid in networks:
-            del networks[ssid]
-            self._update_and_save_networks(networks)
 
     # === Devices ===
     def get_device_by_name(self, name):

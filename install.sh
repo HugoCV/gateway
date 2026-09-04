@@ -26,6 +26,7 @@ if command -v rsync >/dev/null 2>&1; then
     --exclude ".venv" \
     --exclude "venv" \
     --exclude "__pycache__" \
+    --exclude "data/gateway.json" \
     ./ "${INSTALL_DIR}/"
 else
   sudo cp -R . "${INSTALL_DIR}"
