@@ -68,9 +68,12 @@ def run_gui():
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--mode", choices=["gui", "headless"],
+    parser.add_argument("--mode", choices=["gui", "headless", "desktop"],
                         default=os.getenv("APP_MODE", "gui"))
     args = parser.parse_args()
+    if args.mode == "desktop":
+        from infrastructure.desktop import run_desktop
+        return run_desktop(run_gui)
     if args.mode == "gui":
         # The window can be opened before the service and while it is restarting.
         run_gui()

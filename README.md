@@ -5,6 +5,23 @@ Gateway funciona como un servicio independiente de su ventana. El servicio es el
 estado por un socket Unix local y privado; abrir varias ventanas o cerrarlas no
 crea ni detiene conexiones a los dispositivos.
 
+## Arranque directo
+
+Desde la carpeta del proyecto, con el entorno `venv` y las dependencias instaladas:
+
+```bash
+./start.sh
+```
+
+Este comando inicia el motor en segundo plano si hace falta y abre la ventana.
+No requiere el instalador ni systemd. Si el motor ya responde, reutiliza ese
+proceso. Cerrar la ventana deja el motor funcionando; puede abrirla de nuevo
+ejecutando el mismo comando. Los errores del motor se guardan en `gateway.log`.
+
+Ambos procesos usan `GATEWAY_CONFIG_PATH` si está definida. En caso contrario,
+usan `/var/lib/alrotek-gateway/gateway.json` si existe, para conservar la identidad
+de una instalación anterior; si no existe, usan `data/gateway.json` del proyecto.
+
 ## En el equipo instalado
 
 El instalador 1.2.0 habilita `alrotek-gateway.service` al encender el equipo y abre
