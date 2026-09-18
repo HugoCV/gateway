@@ -9,6 +9,7 @@ from application.services.device_service import DeviceService
 from infrastructure.connectivity.connectivity import ConnectivityMonitor
 from infrastructure.mqtt.mqtt_client import MqttClient
 from infrastructure.config.loader import get_gateway, save_gateway
+from infrastructure.activity_log import log_value
 
 # =========================
 # Global
@@ -98,7 +99,7 @@ class AppController:
         
     # === commands ===
     def on_receive_gateway_command(self, command):
-        print("on_receive_gateway_command", command)
+        self.log(f"Comando del Gateway recibido: {log_value(command.get('action'))}.")
 
         action = command.get("action")
         if action == "restart":
@@ -114,7 +115,7 @@ class AppController:
         if not (ds := self.devices.get(device_serial)):
             self.log(
                 f"⚠️ No se encontró el dispositivo {device_serial} "
-                f"para ejecutar {command}"
+                f"para ejecutar {log_value(action)}"
             )
             if action == "device-command" and command_id:
                 params = command.get("params", {})
@@ -130,7 +131,11 @@ class AppController:
             return
 
         if action == "update-connections":
-            ds.update_connection_config(command["params"])
+            try:
+                ds.update_connection_config(command["params"])
+            except Exception as error:
+                self.log(f"❌ Error aplicando conexión a {device_serial}: {type(error).__name__}.")
+                raise
         elif action == "device-command":
             params = command.get("params", {})
             value = str(params.get("command", ""))
@@ -164,6 +169,10 @@ class AppController:
                     f"en {device_serial}: {error}"
                 )
 
+            self.log(
+                f"Resultado del comando {log_value(value)} en {device_serial}: "
+                f"{'correcto' if succeeded else 'fallido'}; motivo={log_value(reason)}."
+            )
             if command_id:
                 self.mqtt_handler.publish_device_command_result(
                     device_serial=device_serial,
@@ -180,7 +189,7 @@ class AppController:
                     "no se puede confirmar al backend"
                 )
         elif action == "update-config":
-            print("update-config", command["params"]["value"], "device_serial", device_serial)
+            self.log(f"⚠️ update-config recibido para {device_serial}; su aplicación no está implementada.")
         
     # === initial load ===
     def on_initial_load(self):

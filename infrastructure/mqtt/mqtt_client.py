@@ -10,6 +10,7 @@ from paho.mqtt.client import topic_matches_sub
 from bson import ObjectId
 
 from infrastructure.config.loader import load_config
+from infrastructure.activity_log import log_value
 
 cfg = load_config()
 
@@ -251,7 +252,7 @@ class MqttClient:
         )
 
     def on_message(self, client, userdata, msg):
-        print("ON MESSAGE")
+        self.log(f"MQTT recibido: {msg.topic} ({len(msg.payload)} bytes).")
         if topic_matches_sub(self.deviceCommandTopic, msg.topic):
             parts = msg.topic.split("/")
             try:
@@ -261,20 +262,28 @@ class MqttClient:
                 device_id = None
             try:
                 payload = json.loads(msg.payload.decode("utf-8"))
+                if not isinstance(payload, dict):
+                    raise ValueError('Se esperaba un objeto.')
             except Exception:
-                payload = msg.payload  # raw if not JSON
+                self.log(f"❌ Comando inválido recibido para {log_value(device_id)}.")
+                return
+            self.log(
+                f"Comando recibido: dispositivo={log_value(device_id)}, "
+                f"acción={log_value(payload.get('action'))}, id={log_value(payload.get('commandId'))}."
+            )
             self.command_callback(device_id, payload)
-            self.log(f"[MQTT-CMD] device={device_id} payload={payload}")
             return
         if topic_matches_sub(self.gatewayCommandTopic, msg.topic):
 
             parts = msg.topic.split("/")
             try:
                 payload = json.loads(msg.payload.decode("utf-8"))
+                if not isinstance(payload, dict):
+                    raise ValueError('Se esperaba un objeto.')
             except Exception:
-                payload = msg.payload
+                self.log("❌ Comando inválido recibido para el Gateway.")
+                return
             self.command_gateway_callback(payload)
-            self.log(f"[MQTT-CMD] payload={payload}")
             return
 
         # Config response

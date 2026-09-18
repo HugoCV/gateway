@@ -64,6 +64,7 @@ gateway_config.json
 Logs
 
 *.log
+*.log.*
 
 IDEs and editors
 

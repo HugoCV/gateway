@@ -5,6 +5,7 @@ import threading
 import time
 from typing import Dict, Any, Optional, Tuple
 from threading import RLock
+from infrastructure.activity_log import CONNECTION_FIELDS, log_value
 
 # from infrastructure.http.http_client import HttpClient
 from infrastructure.logo.logo_client import LogoModbusClient
@@ -551,6 +552,13 @@ class DeviceService:
                     self.cc[k] = v
             self._normalize_connection_config()
 
+            for key in CONNECTION_FIELDS:
+                if prev.get(key) != self.cc.get(key):
+                    self.log(
+                        f"Cambio de conexión en {self.serial}: {key}: "
+                        f"{log_value(prev.get(key))} → {log_value(self.cc.get(key))}"
+                    )
+
             # Detect changes.
             changed_tcp    = any(prev.get(k) != self.cc.get(k) for k in ("host", "tcpPort", "slaveId"))
             changed_serial = any(prev.get(k) != self.cc.get(k) for k in ("serialPort", "baudrate", "slaveId"))
@@ -636,6 +644,7 @@ class DeviceService:
                 self.log("ℹ️ update_connection_config: no hubo cambios efectivos.")
 
         # Notify the update.
+        self.log(f"Configuración de conexión aplicada a {self.serial}.")
         if self.update_fields:
             self.update_fields(self)
 

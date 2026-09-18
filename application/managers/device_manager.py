@@ -1,5 +1,6 @@
 from domain.models.device import Device
 import json
+from infrastructure.activity_log import connection_summary, log_value, modbus_summary
 
 class DeviceManager:
     def __init__(self, mqtt_client, refresh_devices, log_func=None):
@@ -14,8 +15,8 @@ class DeviceManager:
             try:
                 data = json.loads(m.payload.decode("utf-8"))
                 self.set_devices(data["devices"])
-            except Exception:
-                data = None
+            except Exception as error:
+                self.log(f"❌ No se pudo procesar la configuración de dispositivos: {type(error).__name__}.")
 
         try:
             self.mqtt_client.request_devices(
@@ -25,8 +26,19 @@ class DeviceManager:
             self.log(f"⚠️ MQTT fetch failed: {e}")
             return None
     def set_devices(self, devices: list):
+        if not isinstance(devices, list) or any(not isinstance(d, dict) for d in devices):
+            raise ValueError('Se esperaba una lista de dispositivos.')
+        self.log(f"Configuración recibida por MQTT: {len(devices)} dispositivo(s).")
+        for device in devices:
+            self.log(
+                f"Dispositivo {log_value(device.get('serialNumber'))}, "
+                f"nombre={log_value(device.get('name'))}; "
+                f"conexión: {connection_summary(device.get('connectionConfig'))}; "
+                f"Modbus: {modbus_summary(device.get('modbusConfig'))}"
+            )
         self.devices = devices
         self.refresh_devices(devices)
+        self.log(f"Configuración cargada: {len(devices)} dispositivo(s). Conexiones iniciadas.")
 
     def read_http_fault(self):
         fault_history = self.http_handler.read_fault_history_sync()

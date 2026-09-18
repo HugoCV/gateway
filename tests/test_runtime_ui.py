@@ -391,6 +391,16 @@ class ControllerBoundaryTests(unittest.TestCase):
             self.controller.save_gateway_identity('org', 'changed')
         self.saved.assert_called_once_with({'organizationId': 'org', 'gatewayId': 'changed'})
 
+    def test_connection_application_failure_is_logged(self):
+        device = Mock()
+        device.update_connection_config.side_effect = OSError('unavailable')
+        self.controller.devices = {'one': device}
+        with self.assertRaises(OSError):
+            self.controller.on_receive_command('one', {
+                'action': 'update-connections', 'params': {'host': '192.0.2.20'},
+            })
+        self.assertIn('Error aplicando conexión', self.controller.log.call_args.args[0])
+
 
 if __name__ == "__main__":
     unittest.main()

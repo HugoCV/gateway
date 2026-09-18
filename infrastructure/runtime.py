@@ -24,7 +24,8 @@ def socket_path():
 
 
 class RuntimeState:
-    def __init__(self):
+    def __init__(self, log_writer=None):
+        self._log_writer = log_writer
         self.instance = uuid.uuid4().hex
         self._lock = threading.Lock()
         self._logs = deque(maxlen=250)
@@ -33,6 +34,8 @@ class RuntimeState:
 
     def log(self, message):
         message = str(message)
+        if self._log_writer:
+            self._log_writer(message)
         print(message, flush=True)
         with self._lock:
             self._sequence += 1

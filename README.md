@@ -22,6 +22,31 @@ Ambos procesos usan `GATEWAY_CONFIG_PATH` si está definida. En caso contrario,
 usan `/var/lib/alrotek-gateway/gateway.json` si existe, para conservar la identidad
 de una instalación anterior; si no existe, usan `data/gateway.json` del proyecto.
 
+## Historial de actividad
+
+El motor escribe `gateway.log` en la carpeta del proyecto, tanto con `./start.sh`
+como al ejecutarse en modo `headless`. Cada entrada incluye fecha, hora y zona
+horaria. Registra las configuraciones recibidas por MQTT, un resumen de conexiones
+y canales Modbus por dispositivo, los cambios de valores (anterior → nuevo),
+los comandos y sus resultados, y los mensajes de conexión y error del motor.
+Una configuración aplicada no significa que el equipo haya conectado: los
+mensajes de conexión se registran por separado.
+
+El archivo conserva el historial entre reinicios y rota al alcanzar 5 MiB,
+manteniendo tres copias: `gateway.log.1`, `.2` y `.3`. No guarda los mensajes MQTT
+completos ni convierte el historial en una copia de configuración para arrancar
+sin conexión. Los resúmenes de conexión incluyen únicamente campos técnicos.
+
+Para ver la actividad en vivo:
+
+```bash
+tail -f gateway.log
+```
+
+`gateway-startup.log` contiene la salida adicional de consola y los errores de
+arranque al usar `./start.sh`; se reemplaza al iniciar un nuevo motor. El historial
+con fechas permanece en `gateway.log` y sus copias.
+
 ## En el equipo instalado
 
 El instalador 1.2.0 habilita `alrotek-gateway.service` al encender el equipo y abre

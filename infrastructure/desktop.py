@@ -35,8 +35,10 @@ def ensure_runtime(timeout=30):
         pass
 
     log_path = ROOT / 'gateway.log'
+    # Keep raw output separate: a second writer would break activity log rotation.
+    startup_path = ROOT / 'gateway-startup.log'
     print(f'Iniciando Gateway con configuración: {config}', flush=True)
-    with log_path.open('a', encoding='utf-8') as log:
+    with startup_path.open('w', encoding='utf-8') as log:
         process = subprocess.Popen(
             [sys.executable, '-u', str(ROOT / 'main.py'), '--mode', 'headless'],
             cwd=ROOT, env=os.environ.copy(), stdin=subprocess.DEVNULL,
@@ -51,7 +53,7 @@ def ensure_runtime(timeout=30):
             if process.poll() is not None:
                 raise RuntimeError(
                     f'El motor Gateway terminó con código {process.returncode}. '
-                    f'Revise {log_path}. Si otro Gateway está activo, use su misma '
+                    f'Revise {log_path} y {startup_path}. Si otro Gateway está activo, use su misma '
                     'cuenta y GATEWAY_CONFIG_PATH.'
                 )
             time.sleep(0.2)

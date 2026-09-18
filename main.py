@@ -29,14 +29,14 @@ def acquire_runtime_lock():
     return lock_file
 
 
-def run_headless():
+def run_headless(log_writer=None):
     # Desktop clients never import MQTT, Modbus, or their configuration.
     from application.app_controller import AppController
     from infrastructure.runtime import RuntimeServer, RuntimeState
 
     stop_event = Event()
     restart_event = Event()
-    state = RuntimeState()
+    state = RuntimeState(log_writer=log_writer)
 
     def request_restart():
         restart_event.set()
@@ -83,9 +83,21 @@ def main():
     if runtime_lock is None:
         print("Gateway ya está ejecutándose en otro proceso.")
         return 1
+    logger = None
     try:
-        restart = run_headless()
+        from infrastructure.activity_log import create_activity_logger
+        logger = create_activity_logger()
+        logger.info('Iniciando motor Gateway.')
+        restart = run_headless(log_writer=logger.info)
+        logger.info('Motor Gateway detenido%s.', ' para reiniciar' if restart else '')
+    except Exception:
+        if logger:
+            logger.exception('El motor Gateway terminó por un error.')
+        raise
     finally:
+        if logger:
+            for handler in logger.handlers:
+                handler.close()
         fcntl.flock(runtime_lock.fileno(), fcntl.LOCK_UN)
         runtime_lock.close()
     if restart:

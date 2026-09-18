@@ -29,9 +29,11 @@ class GatewayManager:
         def _cb(c,u,m):
             try:
                 data = json.loads(m.payload.decode("utf-8"))
+                self.log("Configuración del Gateway recibida por MQTT.")
                 self.set_gateway(data)
-            except Exception:
-                data = None
+                self.log("Configuración del Gateway cargada.")
+            except Exception as error:
+                self.log(f"❌ No se pudo procesar la configuración del Gateway: {type(error).__name__}.")
 
         try:
             self.mqtt_client.request_gateway_config(
