@@ -3,11 +3,8 @@ import queue
 import re
 import time
 from datetime import datetime
-from tkinter import ttk, scrolledtext
-from application.app_controller import AppController
-# from infrastructure.modbus.modbus_tcp import ModbusTcp
-# from infrastructure.http.http_client import HttpClient
-from infrastructure.mqtt.mqtt_client import MQTT_HOST, MQTT_PORT
+from tkinter import ttk, scrolledtext, messagebox
+from ui.service_client import ServiceClient
 
 class MainWindow(tk.Tk):
     def __init__(self):
@@ -46,6 +43,14 @@ class MainWindow(tk.Tk):
         self._key_event_ids = []
         self._last_key_events = {}
         self._ui_queue = queue.Queue()
+        self._gateway_identity = None
+        self._service_available = False
+        self._save_pending = False
+        self.service_status_var = tk.StringVar(value="Esperando al servicio Gateway…")
+        ttk.Label(self, textvariable=self.service_status_var).pack(anchor="w", padx=15, pady=(10, 0))
+        ttk.Label(self, text="Puede cerrar esta ventana: el Gateway seguirá funcionando.").pack(
+            anchor="w", padx=15,
+        )
 
 
         self._build_gateway_config_widget()
@@ -54,11 +59,11 @@ class MainWindow(tk.Tk):
         self._build_device_list_widget()
         self.log_widget = self._build_log_widget()
         self.after(100, self._drain_ui_queue)
-        self.controller = AppController(self)
+        self.controller = ServiceClient(self._ui_queue)
         self.protocol("WM_DELETE_WINDOW", self._close)
 
     def _close(self):
-        """Close hardware and network workers before destroying the window."""
+        """Disconnect this window without stopping the service or its devices."""
         if hasattr(self, "controller"):
             self.controller.close()
         self.destroy()
@@ -112,9 +117,9 @@ class MainWindow(tk.Tk):
         ttk.Entry(frame, textvariable=self.gw_id_var).grid(row=1, column=1, sticky="ew", padx=5, pady=5)
 
         # Save Button
-        # The command is assigned in the controller.
-        save_button = ttk.Button(frame, text="Guardar y Reiniciar", command=lambda: self.controller.on_save_gateway_config())
-        save_button.grid(row=2, column=1, sticky="e", padx=5, pady=10)
+        self.save_button = ttk.Button(frame, text="Guardar y reiniciar servicio",
+                                      command=self._save_gateway_config, state="disabled")
+        self.save_button.grid(row=2, column=1, sticky="e", padx=5, pady=10)
 
     def _build_connectivity_widget(self):
         """Create the connectivity status widget."""
@@ -233,36 +238,64 @@ class MainWindow(tk.Tk):
 
     def _apply_device_list(self, devices):
         if not self.device_tree_tags_configured:
-            # Configure color tags the first time.
-            self.device_tree.tag_configure('online', foreground='green')
-            self.device_tree.tag_configure('offline', foreground='red')
             self.device_tree.tag_configure('evenrow', background='#f0f0f0')
             self.device_tree.tag_configure('oddrow', background='#ffffff')
             self.device_tree_tags_configured = True
+        for item in self.device_tree.get_children():
+            self.device_tree.delete(item)
+        for index, device in enumerate(devices):
+            cc = device.get("cc", {})
+            self.device_tree.insert('', 'end', values=(
+                device.get("name", "-"), device.get("serial", "-"),
+                cc.get("serialPort", "-"), cc.get("baudrate", "-"), cc.get("slaveId", "-"),
+                cc.get("host") if cc.get("host") not in (None, "-") else cc.get("tcpIp", "-"),
+                cc.get("tcpPort", "-"), "Online" if device.get("connected") else "Offline",
+                cc.get("logoIp", "-"), cc.get("logoPort", "-"),
+                "Online" if device.get("connected_logo") else "Offline",
+            ), tags=('evenrow' if index % 2 == 0 else 'oddrow',))
 
-        # Clear the table before updating.
-        for i in self.device_tree.get_children():
-            self.device_tree.delete(i)
+    def _save_gateway_config(self):
+        if not self._service_available or self._save_pending:
+            return
+        organization_id = self.org_id_var.get().strip()
+        gateway_id = self.gw_id_var.get().strip()
+        if not organization_id or not gateway_id:
+            messagebox.showerror("Datos requeridos", "Complete Organization ID y Gateway ID.")
+            return
+        self._save_pending = True
+        self.save_button.configure(state="disabled")
+        self.controller.save_gateway(organization_id, gateway_id)
 
-        # Fill with the new data.
-        for i, device in enumerate(devices):
-            row_tag = 'evenrow' if i % 2 == 0 else 'oddrow'
-            tcp_ip = device.cc.get("tcpIp", "-")
-            tcp_port = device.cc.get("tcpPort", "-")
-            logo_ip = device.cc.get("logoIp", "-")
-            serial_port = device.cc.get("serialPort", "-")
-            baudrate = device.cc.get("baudrate", "-")
-            slave_id = device.cc.get("slaveId", "-")
-            logo_port = device.cc.get("logoPort", "-")
-            status_text = "Online" if device.connected else "Offline"
-            logo_status_text = "Online" if device.connected_logo else "Offline"
+    def _apply_runtime_snapshot(self, snapshot):
+        self._service_available = True
+        self.service_status_var.set("Servicio Gateway conectado · funcionando en segundo plano")
+        if not self._save_pending:
+            self.save_button.configure(state="normal")
+        gateway = snapshot["gateway"]
+        identity = (gateway.get("organizationId", ""), gateway.get("gatewayId", ""))
+        # Polling must not overwrite an edit that the user is still typing.
+        if identity != self._gateway_identity:
+            self.org_id_var.set(identity[0])
+            self.gw_id_var.set(identity[1])
+            self._gateway_identity = identity
+        self._apply_device_list(snapshot["devices"])
+        connectivity = snapshot["connectivity"]
+        if connectivity["connected"] is None:
+            self.conn_status_var.set("Verificando...")
+            self.conn_network_var.set("-")
+        else:
+            self._apply_connectivity_status(connectivity["connected"], connectivity["network"])
+        for entry in snapshot["logs"]:
+            self._append_log(entry["message"])
 
-            # Insert values and apply tags.
-            item_id = self.device_tree.insert('', 'end', values=(device.name, device.serial, serial_port, baudrate, slave_id, tcp_ip, tcp_port, status_text, logo_ip, logo_port, logo_status_text), tags=(row_tag,))
-            
-            # Applying color tags only to status cells requires a Tkinter workaround.
-            # Standard cell coloring is not available, but rows can be reinserted with tags.
-            # This simpler implementation colors the whole row, which is acceptable.
+    def _service_unavailable(self):
+        self._service_available = False
+        self.save_button.configure(state="disabled")
+        self.service_status_var.set("Esperando al servicio Gateway · reconexión automática")
+        self.conn_status_var.set("Sin datos del servicio")
+        self.conn_status_label.config(foreground="#a05a00")
+        self.conn_network_var.set("-")
+        self._apply_device_list([])
 
     def _build_log_widget(self):
         """Create the text widget for logs."""
@@ -385,7 +418,20 @@ class MainWindow(tk.Tk):
         try:
             while True:
                 event, payload = self._ui_queue.get_nowait()
-                if event == "log":
+                if event == "runtime":
+                    self._apply_runtime_snapshot(payload)
+                elif event == "service_unavailable":
+                    self._service_unavailable()
+                    self._append_log("⚠️ Servicio no disponible. La interfaz seguirá intentando conectarse.")
+                elif event == "save_result":
+                    self._save_pending = False
+                    if payload is not None:
+                        self.save_button.configure(state="normal" if self._service_available else "disabled")
+                        messagebox.showerror("No se pudo guardar", payload)
+                    else:
+                        self._service_unavailable()
+                        self._append_log("Configuración guardada. Esperando el reinicio del servicio…")
+                elif event == "log":
                     self._append_log(payload)
                 elif event == "connectivity":
                     self._apply_connectivity_status(*payload)

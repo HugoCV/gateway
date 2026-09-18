@@ -1,132 +1,92 @@
-# /opt/miapp/main.py
-import os
-import signal
-import time
+"""Run the hardware service or its independent desktop client."""
 import argparse
 import fcntl
+import os
+import signal
+import sys
 import tempfile
 from pathlib import Path
 from threading import Event
-import traceback
-
-# Try to import the main logic controller
-try:
-    from application.app_controller import AppController
-except Exception as e:
-    print("[main] Error importando AppController:", e)
-    traceback.print_exc()
-    AppController = None
 
 
-LOCK_PATH = (
-    Path(tempfile.gettempdir()) / f"alrotek-gateway-{os.getuid()}.lock"
-)
+SERVICE_UI_PROTOCOL = 1
+
+LOCK_PATH = Path(tempfile.gettempdir()) / f"alrotek-gateway-{os.getuid()}.lock"
 
 
 def acquire_runtime_lock():
-    """Prevent GUI and headless modes from accessing the same ports together."""
-    lock_file = LOCK_PATH.open("w")
+    """Only the background service may own the hardware runtime."""
+    lock_file = LOCK_PATH.open("a+")
     try:
         fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
     except BlockingIOError:
         lock_file.close()
         return None
+    lock_file.seek(0)
+    lock_file.truncate()
     lock_file.write(str(os.getpid()))
     lock_file.flush()
     return lock_file
 
 
-def notify_already_running(mode):
-    message = "Gateway ya está ejecutándose en otro proceso."
-    print(f"[main] {message}")
-    if mode != "gui":
-        return
-    try:
-        import tkinter as tk
-        from tkinter import messagebox
-
-        root = tk.Tk()
-        root.withdraw()
-        messagebox.showinfo(
-            "Gateway en ejecución",
-            "Gateway ya está activo en segundo plano. "
-            "Detenga el servicio antes de abrir la interfaz operativa.",
-        )
-        root.destroy()
-    except Exception:
-        pass
-
-
 def run_headless():
-    """
-    Run the app logic without a GUI for systemd usage.
-    """
-    stop_event = Event()
+    # Desktop clients never import MQTT, Modbus, or their configuration.
+    from application.app_controller import AppController
+    from infrastructure.runtime import RuntimeServer, RuntimeState
 
-    def _graceful(signum, _):
-        print(f"[headless] señal {signum} recibida, saliendo…")
+    stop_event = Event()
+    restart_event = Event()
+    state = RuntimeState()
+
+    def request_restart():
+        restart_event.set()
         stop_event.set()
 
-    signal.signal(signal.SIGTERM, _graceful)
-    signal.signal(signal.SIGINT, _graceful)
+    def graceful_stop(signum, _frame):
+        state.log(f"[servicio] Señal {signum}; cerrando conexiones…")
+        stop_event.set()
 
-    if AppController is None:
-        print("[headless] AppController no disponible, bucle dummy.")
-        try:
-            while not stop_event.is_set():
-                time.sleep(0.5)
-        finally:
-            print("[headless] terminado.")
-        return
-
-    ctrl = AppController(window=None)
+    signal.signal(signal.SIGTERM, graceful_stop)
+    signal.signal(signal.SIGINT, graceful_stop)
+    controller = AppController(log_callback=state.log,
+                               status_callback=state.connectivity,
+                               restart_callback=request_restart)
+    server = RuntimeServer(controller, state, request_restart)
     try:
-        ctrl.run(stop_event=stop_event)  # blocking method
+        server.start()
+        controller.run(stop_event=stop_event)
     finally:
-        if hasattr(ctrl, "close"):
-            ctrl.close()
-        print("[headless] shutdown completo.")
+        server.close()
+        controller.close()
+    return restart_event.is_set()
 
 
 def run_gui():
-    """
-    Run the Tkinter UI.
-    """
     from ui.main_window import MainWindow
-    app = MainWindow()
-    app.mainloop()
+    MainWindow().mainloop()
 
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--mode",
-        choices=["gui", "headless"],
-        default=os.getenv("APP_MODE", "gui")  # default to GUI if not configured
-    )
+    parser.add_argument("--mode", choices=["gui", "headless"],
+                        default=os.getenv("APP_MODE", "gui"))
     args = parser.parse_args()
+    if args.mode == "gui":
+        # The window can be opened before the service and while it is restarting.
+        run_gui()
+        return 0
 
     runtime_lock = acquire_runtime_lock()
     if runtime_lock is None:
-        notify_already_running(args.mode)
+        print("Gateway ya está ejecutándose en otro proceso.")
         return 1
-
     try:
-        if args.mode == "gui":
-            try:
-                run_gui()
-            except Exception as e:
-                # Fallback to headless mode when DISPLAY is not available.
-                if "no display name and no $display" in str(e).lower():
-                    print("[main] No hay DISPLAY → cambiando a modo headless")
-                    run_headless()
-                else:
-                    raise
-        else:
-            run_headless()
+        restart = run_headless()
     finally:
         fcntl.flock(runtime_lock.fileno(), fcntl.LOCK_UN)
         runtime_lock.close()
+    if restart:
+        os.execv(sys.executable, [sys.executable] + sys.argv)
     return 0
 
 

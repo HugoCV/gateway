@@ -25,10 +25,13 @@ class AppController:
         self,
         window=None,
         log_callback: Optional[Callable[[str], None]] = None,
+        status_callback: Optional[Callable[[bool, str], None]] = None,
+        restart_callback: Optional[Callable[[], None]] = None,
     ):
         self.window = window
         self.log = log_callback or getattr(window, "_log", print)
         self._closed = False
+        self.restart_callback = restart_callback
         self.gateway_cfg = get_gateway()
         self.mqtt_handler = MqttClient(
             self.gateway_cfg,
@@ -45,7 +48,7 @@ class AppController:
         self.connectivity_monitor = ConnectivityMonitor(
             log_callback=self.log,
             status_callback=(
-                self.window.update_connectivity_status if self.window else None
+                status_callback or (self.window.update_connectivity_status if self.window else None)
             ),
         )
         self.connectivity_monitor.start()
@@ -99,7 +102,7 @@ class AppController:
 
         action = command.get("action")
         if action == "restart":
-            os.execv(sys.executable, [sys.executable] + sys.argv)
+            self.request_restart()
         elif action == "restart-gateway":
             print("restart")
 
@@ -189,24 +192,51 @@ class AppController:
     def _refresh_gateway_fields(self, gateway):
         return
 
-    def on_save_gateway_config(self):
-        if not self.window:
-            self.log("⚠️ Guardar configuración requiere la interfaz gráfica.")
-            return
+    def runtime_snapshot(self):
+        """Expose only the identity and device fields needed by local windows."""
+        connection_keys = ("host", "tcpIp", "tcpPort", "serialPort", "baudrate",
+                           "slaveId", "logoIp", "logoPort")
+        devices = []
+        for device in list(self.devices.values()):
+            devices.append({
+                "name": device.name,
+                "serial": device.serial,
+                "cc": {key: device.cc.get(key, "-") for key in connection_keys},
+                "connected": bool(device.connected),
+                "connected_logo": bool(device.connected_logo),
+            })
+        return {
+            "gateway": {key: self.gateway_cfg.get(key, "")
+                        for key in ("organizationId", "gatewayId")},
+            "devices": devices,
+        }
 
-        org_id = self.window.org_id_var.get()
-        gw_id = self.window.gw_id_var.get()
-
+    def save_gateway_identity(self, organization_id, gateway_id):
+        # Environment values take precedence in get_gateway(); avoid reporting
+        # success for an edit that would be silently undone on restart.
+        for name, value in (("GATEWAY_ORGANIZATION_ID", organization_id),
+                            ("GATEWAY_ID", gateway_id)):
+            if os.getenv(name) and os.getenv(name) != value:
+                raise ValueError(f"{name} está fijado en .env. Edite ese archivo y reinicie el servicio.")
         current_config = get_gateway()
-        current_config["organizationId"] = org_id
-        current_config["gatewayId"] = gw_id
+        current_config.update(organizationId=organization_id, gatewayId=gateway_id)
+        save_gateway(current_config)
+        self.log("✅ Configuración de gateway guardada. Reiniciando el servicio...")
 
-        try:
-            save_gateway(current_config)
-            self.log("✅ Configuración de gateway guardada. Reiniciando...")
+    def request_restart(self):
+        if self.restart_callback is not None:
+            self.restart_callback()
+        else:
             os.execv(sys.executable, [sys.executable] + sys.argv)
-        except Exception as e:
-            self.log(f"❌ Error al guardar la configuración: {e}")
+
+    def on_save_gateway_config(self):
+        if self.window:
+            try:
+                self.save_gateway_identity(self.window.org_id_var.get(),
+                                           self.window.gw_id_var.get())
+                self.request_restart()
+            except Exception as error:
+                self.log(f"❌ Error al guardar la configuración: {error}")
     
     # === MQTT ===
     def on_connect_mqtt(self):
