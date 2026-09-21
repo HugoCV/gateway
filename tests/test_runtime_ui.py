@@ -361,7 +361,7 @@ class ControllerBoundaryTests(unittest.TestCase):
             'application.services.device_service': SimpleNamespace(DeviceService=object),
             'infrastructure.connectivity.connectivity': SimpleNamespace(ConnectivityMonitor=object),
             'infrastructure.mqtt.mqtt_client': SimpleNamespace(MqttClient=object),
-            'infrastructure.config.loader': SimpleNamespace(get_gateway=lambda: {}, save_gateway=self.saved),
+            'infrastructure.config.loader': SimpleNamespace(get_gateway=lambda: {}, save_gateway=self.saved, GATEWAY_PATH='/unused/gateway.json'),
         }
         spec = importlib.util.spec_from_file_location('controller_test',
                     Path(__file__).resolve().parents[1] / 'application/app_controller.py')

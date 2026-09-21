@@ -60,6 +60,7 @@ Gateway configuration
 
 gateway_config.json
 /data/gateway.json
+/data/gateway-commands.json
 
 Logs
 

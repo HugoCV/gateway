@@ -6,9 +6,10 @@ from typing import Callable, Optional
 from application.managers.gateway_manager import GatewayManager
 from application.managers.device_manager import DeviceManager
 from application.services.device_service import DeviceService
+from application.services.gateway_command_service import GatewayCommandService
 from infrastructure.connectivity.connectivity import ConnectivityMonitor
 from infrastructure.mqtt.mqtt_client import MqttClient
-from infrastructure.config.loader import get_gateway, save_gateway
+from infrastructure.config.loader import get_gateway, save_gateway, GATEWAY_PATH
 from infrastructure.activity_log import log_value
 
 # =========================
@@ -34,12 +35,20 @@ class AppController:
         self._closed = False
         self.restart_callback = restart_callback
         self.gateway_cfg = get_gateway()
+        organization_id = self.gateway_cfg.get("organizationId") or self.gateway_cfg.get("organization_id")
+        gateway_id = self.gateway_cfg.get("gatewayId") or self.gateway_cfg.get("gateway_id")
+        self.gateway_commands = GatewayCommandService(
+            os.path.join(os.path.dirname(GATEWAY_PATH), "gateway-commands.json"),
+            organization_id, gateway_id, self.request_restart,
+            lambda result: self.mqtt_handler.publish_gateway_command_result(result), self.log,
+        )
         self.mqtt_handler = MqttClient(
             self.gateway_cfg,
             self.on_initial_load,
             log_callback=self.log,
             command_callback=self.on_receive_command,
-            command_gateway_callback=self.on_receive_gateway_command
+            command_gateway_callback=self.on_receive_gateway_command,
+            gateway_results_callback=self.gateway_commands.flush_results,
         )
 
         if self.window:
@@ -101,11 +110,7 @@ class AppController:
     def on_receive_gateway_command(self, command):
         self.log(f"Comando del Gateway recibido: {log_value(command.get('action'))}.")
 
-        action = command.get("action")
-        if action == "restart":
-            self.request_restart()
-        elif action == "restart-gateway":
-            print("restart")
+        self.gateway_commands.receive(command)
 
     
     def on_receive_command(self, device_serial, command):

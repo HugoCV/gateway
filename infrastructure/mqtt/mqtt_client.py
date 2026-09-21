@@ -28,12 +28,14 @@ class MqttClient:
         on_initial_load: Callable[[], None],
         log_callback: Callable[[str], None],
         command_callback: Callable[[Optional[str], Any], None],
-        command_gateway_callback: Callable[[Optional[str], Any], None]
+        command_gateway_callback: Callable[[Any], None],
+        gateway_results_callback: Optional[Callable[[], None]] = None,
     ) -> None:
         self.log = log_callback
         self.command_gateway_callback = command_gateway_callback
         self.command_callback = command_callback
         self.on_initial_load = on_initial_load
+        self.gateway_results_callback = gateway_results_callback
 
         self.client: Optional[mqtt.Client] = None
         self._loop_started = False
@@ -174,6 +176,10 @@ class MqttClient:
 
     # ---------- Paho callbacks ----------
     def on_connect(self, client: mqtt.Client, userdata, flags, reason_code, properties=None) -> None:
+        if reason_code != 0:
+            self._connected_evt.clear()
+            self.log(f"Conexión MQTT rechazada (rc={reason_code})")
+            return
         self.log(f"✅ Connected (rc={reason_code})")
 
         if not self.org_id or not self.gw_id:
@@ -233,6 +239,11 @@ class MqttClient:
         while not self._stop_event.wait(GATEWAY_HEARTBEAT_INTERVAL_SECONDS):
             if self._connected_evt.is_set():
                 self._publish_gateway_status("online")
+                if self.gateway_results_callback:
+                    try:
+                        self.gateway_results_callback()
+                    except Exception as error:
+                        self.log(f"Error confirmando comando: {type(error).__name__}")
 
     def _publish_gateway_status(self, status: str, wait: bool = False) -> bool:
         if not self.org_id or not self.gw_id:
@@ -322,12 +333,21 @@ class MqttClient:
                 return False
             if wait:
                 info.wait_for_publish(timeout=2)
+                return info.is_published()
             return True
         except Exception as e:
             self.log(f"❌ Error publishing to {topic}: {e}")
             return False
 
     # ---------- Public API ----------
+    def publish_gateway_command_result(self, result: Dict[str, Any]) -> bool:
+        if not self._connected_evt.is_set():
+            return False
+        return self._publish(
+            f"tenant/{self.org_id}/gateway/{self.gw_id}/command/result",
+            json.dumps(result), qos=1, retain=False, wait=True,
+        )
+
     def publish_device_command_result(
         self,
         device_serial: str,
