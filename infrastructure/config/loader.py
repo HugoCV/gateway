@@ -1,7 +1,7 @@
 # config/loader.py
 import os
 import json
-from dotenv import load_dotenv, find_dotenv
+from dotenv import load_dotenv
 
 # === Paths ===
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -9,14 +9,6 @@ DATA_DIR = os.path.join(BASE_DIR, "../..", "data")
 
 DEVICES_FILE = os.path.join(DATA_DIR, "devices.json")
 SIGNALS_FILE = os.path.join(DATA_DIR, "signals.json")
-GATEWAY_PATH = os.getenv(
-    "GATEWAY_CONFIG_PATH",
-    os.path.join(DATA_DIR, "gateway.json"),
-)
-
-
-# === Internal caches for lazy loading ===
-_gateway_cache = None
 
 
 def _env_int(name: str, default: str) -> int:
@@ -32,12 +24,21 @@ def _env_int(name: str, default: str) -> int:
 # -----------------------------
 def load_env():
     """Load environment variables from .env file if available."""
-    dotenv_path = find_dotenv()
-    if dotenv_path:
+    dotenv_path = os.path.abspath(os.path.join(BASE_DIR, "../..", ".env"))
+    if os.path.isfile(dotenv_path):
         load_dotenv(dotenv_path)
         print(f"Environment loaded from {dotenv_path}")
     else:
         print("No .env file found. Using existing environment variables.")
+
+
+# Resolve the identity path only after loading the environment. All consumers,
+# including those that do not import MQTT, must see the same configuration.
+load_env()
+GATEWAY_PATH = os.getenv(
+    "GATEWAY_CONFIG_PATH",
+    os.path.join(DATA_DIR, "gateway.json"),
+)
 
 
 def load_config():
@@ -88,11 +89,8 @@ def _save_json(path: str, data):
 # Gateway
 # -----------------------------
 def get_gateway():
-    """Return a copy of gateway configuration (lazy-loaded from gateway.json)."""
-    global _gateway_cache
-    if _gateway_cache is None:
-        _gateway_cache = _load_json(GATEWAY_PATH, {})
-    gateway = dict(_gateway_cache)
+    """Read gateway identity without retaining a missing startup file in cache."""
+    gateway = dict(_load_json(GATEWAY_PATH, {}))
     organization_id = os.getenv("GATEWAY_ORGANIZATION_ID")
     gateway_id = os.getenv("GATEWAY_ID")
     if organization_id:
@@ -103,7 +101,5 @@ def get_gateway():
 
 
 def save_gateway(gateway_data: dict):
-    """Save gateway configuration to gateway.json and update cache."""
-    global _gateway_cache
+    """Save gateway configuration to gateway.json."""
     _save_json(GATEWAY_PATH, gateway_data)
-    _gateway_cache = dict(gateway_data)

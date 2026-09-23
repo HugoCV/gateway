@@ -37,6 +37,11 @@ class AppController:
         self.gateway_cfg = get_gateway()
         organization_id = self.gateway_cfg.get("organizationId") or self.gateway_cfg.get("organization_id")
         gateway_id = self.gateway_cfg.get("gatewayId") or self.gateway_cfg.get("gateway_id")
+        self.log(
+            f"Identidad del Gateway: archivo={log_value(os.path.abspath(GATEWAY_PATH))}; "
+            f"organizationId={'presente' if organization_id else 'ausente'}; "
+            f"gatewayId={'presente' if gateway_id else 'ausente'}."
+        )
         self.gateway_commands = GatewayCommandService(
             os.path.join(os.path.dirname(GATEWAY_PATH), "gateway-commands.json"),
             organization_id, gateway_id, self.request_restart,
