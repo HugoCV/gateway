@@ -7,6 +7,7 @@ from application.managers.gateway_manager import GatewayManager
 from application.managers.device_manager import DeviceManager
 from application.services.device_service import DeviceService
 from application.services.gateway_command_service import GatewayCommandService
+from application.services.device_command_service import DeviceCommandService
 from infrastructure.connectivity.connectivity import ConnectivityMonitor
 from infrastructure.mqtt.mqtt_client import MqttClient
 from infrastructure.config.loader import get_gateway, save_gateway, GATEWAY_PATH
@@ -47,13 +48,18 @@ class AppController:
             organization_id, gateway_id, self.request_restart,
             lambda result: self.mqtt_handler.publish_gateway_command_result(result), self.log,
         )
+        self.device_commands = DeviceCommandService(
+            os.path.join(os.path.dirname(GATEWAY_PATH), "device-commands.json"),
+            organization_id, gateway_id, self._execute_device_command,
+            lambda **result: self.mqtt_handler.publish_device_command_result(**result), self.log,
+        )
         self.mqtt_handler = MqttClient(
             self.gateway_cfg,
             self.on_initial_load,
             log_callback=self.log,
             command_callback=self.on_receive_command,
             command_gateway_callback=self.on_receive_gateway_command,
-            gateway_results_callback=self.gateway_commands.flush_results,
+            gateway_results_callback=self.flush_command_results,
         )
 
         if self.window:
@@ -118,7 +124,14 @@ class AppController:
         self.gateway_commands.receive(command)
 
     
+    def flush_command_results(self):
+        self.gateway_commands.flush_results()
+        self.device_commands.flush_results()
+
     def on_receive_command(self, device_serial, command):
+        self.device_commands.receive(device_serial, command)
+
+    def _execute_device_command(self, device_serial, command):
         action = command.get("action")
         command_id = command.get("commandId")
 
@@ -127,18 +140,7 @@ class AppController:
                 f"⚠️ No se encontró el dispositivo {device_serial} "
                 f"para ejecutar {log_value(action)}"
             )
-            if action == "device-command" and command_id:
-                params = command.get("params", {})
-                self.mqtt_handler.publish_device_command_result(
-                    device_serial=device_serial,
-                    command_id=command_id,
-                    status="failed",
-                    command_name=str(params.get("command", "")),
-                    value=str(params.get("value", "on")),
-                    channel=params.get("channel"),
-                    reason="device_not_found",
-                )
-            return
+            return {"status": "failed", "reason": "device_not_found"}
 
         if action == "update-connections":
             try:
@@ -183,21 +185,7 @@ class AppController:
                 f"Resultado del comando {log_value(value)} en {device_serial}: "
                 f"{'correcto' if succeeded else 'fallido'}; motivo={log_value(reason)}."
             )
-            if command_id:
-                self.mqtt_handler.publish_device_command_result(
-                    device_serial=device_serial,
-                    command_id=command_id,
-                    status="success" if succeeded else "failed",
-                    command_name=value,
-                    value=command_value,
-                    channel=channel,
-                    reason=reason,
-                )
-            else:
-                self.log(
-                    f"⚠️ Comando {value} sin commandId; "
-                    "no se puede confirmar al backend"
-                )
+            return {"status": "success" if succeeded else "failed", "reason": reason}
         elif action == "update-config":
             self.log(f"⚠️ update-config recibido para {device_serial}; su aplicación no está implementada.")
         

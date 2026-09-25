@@ -1,8 +1,10 @@
 """Poll the service off the Tk thread, reconnecting across service restarts."""
 import queue
 import threading
+import time
 
 from infrastructure.runtime import RuntimeClient
+from ui.service_status import read_service_status
 
 
 class ServiceClient:
@@ -15,6 +17,7 @@ class ServiceClient:
         self._instance = None
         self._cursor = 0
         self._connected = None
+        self._next_service_check = 0
         self._thread = threading.Thread(target=self._run, daemon=True)
         self._thread.start()
 
@@ -50,4 +53,7 @@ class ServiceClient:
                 if self._connected is not False:
                     self.events.put(("service_unavailable", str(error)))
                 self._connected = False
+            if time.monotonic() >= self._next_service_check and not self._stop.is_set():
+                self.events.put(('system_service', read_service_status()))
+                self._next_service_check = time.monotonic() + 5
             self._stop.wait(self.interval)

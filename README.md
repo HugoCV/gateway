@@ -59,6 +59,13 @@ o se reinicia, muestra que está esperando y vuelve a conectarse automáticament
 Al cerrar la sesión, el servicio continúa funcionando. Sin escritorio no puede
 mostrarse una ventana.
 
+La cabecera distingue el estado del servicio systemd, su inicio automático y si
+el Gateway responde a la ventana. Consulta `systemctl is-active` e `is-enabled`
+cada cinco segundos en segundo plano, sin `sudo` ni cambios al servicio. Un
+servicio activo puede todavía no responder; uno conectado puede tener el inicio
+automático deshabilitado. Si systemd no está disponible o la consulta falla,
+muestra que no pudo consultarlo, sin confundirlo con un servicio detenido.
+
 “Guardar y reiniciar servicio” guarda la identidad externa y reinicia el servicio;
 la ventana permanece abierta. Si `GATEWAY_ORGANIZATION_ID` o `GATEWAY_ID` están
 fijados en `.env`, deben modificarse allí: estos valores tienen prioridad sobre

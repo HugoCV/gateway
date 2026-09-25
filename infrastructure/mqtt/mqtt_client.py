@@ -236,9 +236,12 @@ class MqttClient:
         self._heartbeat_thread.start()
 
     def _heartbeat_loop(self) -> None:
-        while not self._stop_event.wait(GATEWAY_HEARTBEAT_INTERVAL_SECONDS):
+        next_heartbeat = time.monotonic() + GATEWAY_HEARTBEAT_INTERVAL_SECONDS
+        while not self._stop_event.wait(1):
             if self._connected_evt.is_set():
-                self._publish_gateway_status("online")
+                if time.monotonic() >= next_heartbeat:
+                    self._publish_gateway_status("online")
+                    next_heartbeat = time.monotonic() + GATEWAY_HEARTBEAT_INTERVAL_SECONDS
                 if self.gateway_results_callback:
                     try:
                         self.gateway_results_callback()
@@ -372,7 +375,7 @@ class MqttClient:
             payload["reason"] = reason
 
         serialized_payload = json.dumps(payload)
-        published = self._publish(topic, serialized_payload, qos=1)
+        published = self._publish(topic, serialized_payload, qos=1, wait=True)
         if published:
             reason_messages = {
                 "device_not_found": "el dispositivo no existe en el gateway",

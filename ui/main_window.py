@@ -5,6 +5,7 @@ import time
 from datetime import datetime
 from tkinter import ttk, scrolledtext, messagebox
 from ui.service_client import ServiceClient
+from ui.service_status import service_presentation
 
 class MainWindow(tk.Tk):
     def __init__(self):
@@ -46,11 +47,19 @@ class MainWindow(tk.Tk):
         self._gateway_identity = None
         self._service_available = False
         self._save_pending = False
-        self.service_status_var = tk.StringVar(value="Esperando al servicio Gateway…")
-        ttk.Label(self, textvariable=self.service_status_var).pack(anchor="w", padx=15, pady=(10, 0))
-        ttk.Label(self, text="Puede cerrar esta ventana: el Gateway seguirá funcionando.").pack(
-            anchor="w", padx=15,
-        )
+        self._system_service = {}
+        self.system_service_var = tk.StringVar()
+        self.system_service_label = ttk.Label(self, textvariable=self.system_service_var)
+        self.system_service_label.pack(anchor="w", padx=15, pady=(10, 0))
+        self.startup_status_var = tk.StringVar()
+        self.startup_status_label = ttk.Label(self, textvariable=self.startup_status_var)
+        self.startup_status_label.pack(anchor="w", padx=15)
+        self.service_status_var = tk.StringVar()
+        self.service_status_label = ttk.Label(self, textvariable=self.service_status_var)
+        self.service_status_label.pack(anchor="w", padx=15)
+        self.service_hint_var = tk.StringVar()
+        ttk.Label(self, textvariable=self.service_hint_var, wraplength=900).pack(anchor="w", padx=15)
+        self._refresh_service_status()
 
 
         self._build_gateway_config_widget()
@@ -268,7 +277,7 @@ class MainWindow(tk.Tk):
 
     def _apply_runtime_snapshot(self, snapshot):
         self._service_available = True
-        self.service_status_var.set("Servicio Gateway conectado · funcionando en segundo plano")
+        self._refresh_service_status()
         if not self._save_pending:
             self.save_button.configure(state="normal")
         gateway = snapshot["gateway"]
@@ -288,10 +297,20 @@ class MainWindow(tk.Tk):
         for entry in snapshot["logs"]:
             self._append_log(entry["message"])
 
+    def _refresh_service_status(self):
+        presentation = service_presentation(self._system_service, self._service_available)
+        self.system_service_var.set(presentation['service'])
+        self.system_service_label.configure(foreground=presentation['service_color'])
+        self.startup_status_var.set(presentation['startup'])
+        self.startup_status_label.configure(foreground=presentation['startup_color'])
+        self.service_status_var.set(presentation['runtime'])
+        self.service_status_label.configure(foreground=presentation['runtime_color'])
+        self.service_hint_var.set(presentation['hint'])
+
     def _service_unavailable(self):
         self._service_available = False
         self.save_button.configure(state="disabled")
-        self.service_status_var.set("Esperando al servicio Gateway · reconexión automática")
+        self._refresh_service_status()
         self.conn_status_var.set("Sin datos del servicio")
         self.conn_status_label.config(foreground="#a05a00")
         self.conn_network_var.set("-")
@@ -420,6 +439,9 @@ class MainWindow(tk.Tk):
                 event, payload = self._ui_queue.get_nowait()
                 if event == "runtime":
                     self._apply_runtime_snapshot(payload)
+                elif event == 'system_service':
+                    self._system_service = payload
+                    self._refresh_service_status()
                 elif event == "service_unavailable":
                     self._service_unavailable()
                     self._append_log("⚠️ Servicio no disponible. La interfaz seguirá intentando conectarse.")

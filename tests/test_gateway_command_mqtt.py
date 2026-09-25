@@ -42,6 +42,11 @@ class GatewayCommandMqttTests(unittest.TestCase):
         self.assertEqual(kwargs, {"qos": 1, "retain": False})
         self.info.wait_for_publish.assert_called_once_with(timeout=2)
 
+    def test_device_result_waits_for_broker_ack(self):
+        self.info.is_published.return_value = False
+        self.assertFalse(self.client.publish_device_command_result("pump", "one", "success", "restart"))
+        self.info.wait_for_publish.assert_called_once_with(timeout=2)
+
     def test_no_ack_is_not_success(self):
         self.info.is_published.return_value = False
         self.assertFalse(self.client.publish_gateway_command_result(self.result))

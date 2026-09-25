@@ -391,12 +391,33 @@ class ControllerBoundaryTests(unittest.TestCase):
             self.controller.save_gateway_identity('org', 'changed')
         self.saved.assert_called_once_with({'organizationId': 'org', 'gatewayId': 'changed'})
 
+    def test_received_device_commands_pass_through_durable_validation(self):
+        from application.services.device_command_service import DeviceCommandService
+        from datetime import datetime, timedelta, timezone
+        import tempfile
+        with tempfile.TemporaryDirectory() as folder:
+            self.controller.devices = {"one": Mock(name="device")}
+            self.controller.devices["one"].execute_command_with_confirmation.return_value = (True, None)
+            self.controller.device_commands = DeviceCommandService(
+                Path(folder) / "commands.json", "org", "gw",
+                self.controller._execute_device_command, Mock(), Mock())
+            now = datetime.now(timezone.utc)
+            command = {"version": 1, "commandId": "one", "target": {
+                "organizationId": "org", "gatewayId": "gw", "deviceSerial": "one"},
+                "issuedAt": now.isoformat(), "expiresAt": (now + timedelta(seconds=60)).isoformat(),
+                "action": "device-command", "params": {"command": "restart"}}
+            self.controller.on_receive_command("one", dict(command, commandId="old", expiresAt="2000-01-01T00:00:00Z"))
+            self.controller.devices["one"].execute_command_with_confirmation.assert_not_called()
+            self.controller.on_receive_command("one", command)
+            self.controller.on_receive_command("one", command)
+            self.controller.devices["one"].execute_command_with_confirmation.assert_called_once()
+
     def test_connection_application_failure_is_logged(self):
         device = Mock()
         device.update_connection_config.side_effect = OSError('unavailable')
         self.controller.devices = {'one': device}
         with self.assertRaises(OSError):
-            self.controller.on_receive_command('one', {
+            self.controller._execute_device_command('one', {
                 'action': 'update-connections', 'params': {'host': '192.0.2.20'},
             })
         self.assertIn('Error aplicando conexión', self.controller.log.call_args.args[0])
