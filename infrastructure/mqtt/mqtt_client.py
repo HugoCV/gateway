@@ -203,10 +203,12 @@ class MqttClient:
         connection_reason=None,
         channel="direct",
         failed_registers=None,
+        channel_status=None,
     ):
         device_connection_topic = self._topic_publish_device_status(self.org_id, self.gw_id, device_serial)
         payload = {
             "status": status,
+            "channelStatus": channel_status or status,
             "logoStatus": logo_status,
             "connectionReason": connection_reason,
             "channel": channel,

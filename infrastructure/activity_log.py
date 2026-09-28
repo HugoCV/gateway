@@ -49,3 +49,20 @@ def modbus_summary(config):
                            if isinstance(channel.get(key) or {}, dict))
         parts.append(f'{log_value(name)}: protocolo={log_value(channel.get("protocol"))}, {counts}')
     return '; '.join(parts) or '(sin canales)'
+
+
+def profile_summary(profile):
+    if not isinstance(profile, dict):
+        return '(sin perfil)'
+    channels = profile.get('channels') or []
+    if not isinstance(channels, list):
+        return '(perfil inválido)'
+    item_count = sum(
+        len(channel.get('items') or [])
+        for channel in channels if isinstance(channel, dict)
+    )
+    return (
+        f'nombre={log_value(profile.get("name"))}, '
+        f'versión={log_value(profile.get("version"))}, '
+        f'canales={len(channels)}, items={item_count}'
+    )

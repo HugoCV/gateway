@@ -61,8 +61,9 @@ class DeviceCommandService(GatewayCommandService):
             elif not isinstance(params, dict):
                 reason = "invalid_command_params"
             elif command["action"] == "device-command" and (
-                    not isinstance(params.get("command"), str) or not params["command"].strip()
-                    or len(params["command"]) > 128):
+                    any(not isinstance(params.get(key), str) or not params[key].strip()
+                        or len(params[key]) > 128
+                        for key in ("channelId", "itemId", "actionId"))):
                 reason = "invalid_command_params"
             record = {
                 "fingerprint": fingerprint, "bootId": self.boot_id, "expires": expires,
@@ -106,8 +107,8 @@ class DeviceCommandService(GatewayCommandService):
                         acknowledged = self.publish(
                             device_serial=record["serial"], command_id=command_id,
                             status=record["status"], reason=record.get("reason"),
-                            command_name=str(params.get("command", "")),
-                            value=str(params.get("value", "on")), channel=params.get("channel"))
+                            command_name=str(params.get("itemId", "")),
+                            value=str(params.get("actionId", "")), channel=params.get("channelId"))
                         if not acknowledged:
                             continue
                     record["dirty"] = False

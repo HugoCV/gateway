@@ -144,45 +144,37 @@ class AppController:
 
         if action == "update-connections":
             try:
-                ds.update_connection_config(command["params"])
+                ds.update_connections(command.get("params", {}).get("connections"))
             except Exception as error:
                 self.log(f"❌ Error aplicando conexión a {device_serial}: {type(error).__name__}.")
                 raise
         elif action == "device-command":
             params = command.get("params", {})
-            value = str(params.get("command", ""))
-            command_value = str(params.get("value", "on"))
-            channel = params.get("channel")
-            normalized_value = value.lower()
+            channel_id = params.get("channelId")
+            item_id = params.get("itemId")
+            action_id = params.get("actionId")
             succeeded = False
             reason = None
 
             try:
-                if normalized_value == "turnon":
-                    self.log(f"Intentando encender el dispositivo {ds.name}")
-                elif normalized_value == "turnoff":
-                    self.log(f"Intentando apagar el dispositivo {ds.name}")
-                elif normalized_value == "restart":
-                    self.log(f"Intentando reiniciar el dispositivo {ds.name}")
-                else:
-                    self.log(
-                        f"Ejecutando comando {value}.{command_value} "
-                        f"en canal {channel or 'auto'} para {ds.name}"
-                    )
-                succeeded, reason = ds.execute_command_with_confirmation(
-                    value, channel, command_value
+                self.log(
+                    f"Ejecutando {item_id}.{action_id} "
+                    f"en canal {channel_id} para {ds.name}"
+                )
+                succeeded, reason = ds.execute_action(
+                    channel_id, item_id, action_id
                 )
                 if not succeeded and not reason:
                     reason = "device_write_failed"
             except Exception as error:
                 reason = "command_exception"
                 self.log(
-                    f"❌ Error ejecutando comando {value} "
+                    f"❌ Error ejecutando acción {item_id}.{action_id} "
                     f"en {device_serial}: {error}"
                 )
 
             self.log(
-                f"Resultado del comando {log_value(value)} en {device_serial}: "
+                f"Resultado de {log_value(item_id)}.{log_value(action_id)} en {device_serial}: "
                 f"{'correcto' if succeeded else 'fallido'}; motivo={log_value(reason)}."
             )
             return {"status": "success" if succeeded else "failed", "reason": reason}
@@ -201,14 +193,12 @@ class AppController:
 
     def runtime_snapshot(self):
         """Expose only the identity and device fields needed by local windows."""
-        connection_keys = ("host", "tcpIp", "tcpPort", "serialPort", "baudrate",
-                           "slaveId", "logoIp", "logoPort")
         devices = []
         for device in list(self.devices.values()):
             devices.append({
                 "name": device.name,
                 "serial": device.serial,
-                "cc": {key: device.cc.get(key, "-") for key in connection_keys},
+                "cc": {"channels": len(device.channels)},
                 "connected": bool(device.connected),
                 "connected_logo": bool(device.connected_logo),
             })

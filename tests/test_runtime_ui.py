@@ -374,12 +374,12 @@ class ControllerBoundaryTests(unittest.TestCase):
     def test_snapshot_exposes_display_fields_without_credentials(self):
         self.controller.gateway_cfg = {'organizationId': 'org', 'gatewayId': 'gw', 'secret': 'hidden'}
         self.controller.devices = {'one': SimpleNamespace(
-            name='Pump', serial='001', cc={'host': '192.0.2.1', 'password': 'hidden'},
+            name='Pump', serial='001', channels={'main': Mock()},
             connected=True, connected_logo=False,
         )}
         result = self.controller.runtime_snapshot()
         self.assertEqual(result['gateway'], {'organizationId': 'org', 'gatewayId': 'gw'})
-        self.assertEqual(result['devices'][0]['cc']['host'], '192.0.2.1')
+        self.assertEqual(result['devices'][0]['cc'], {'channels': 1})
         self.assertNotIn('hidden', json.dumps(result))
 
     def test_environment_identity_cannot_be_silently_overridden(self):
@@ -397,7 +397,7 @@ class ControllerBoundaryTests(unittest.TestCase):
         import tempfile
         with tempfile.TemporaryDirectory() as folder:
             self.controller.devices = {"one": Mock(name="device")}
-            self.controller.devices["one"].execute_command_with_confirmation.return_value = (True, None)
+            self.controller.devices["one"].execute_action.return_value = (True, None)
             self.controller.device_commands = DeviceCommandService(
                 Path(folder) / "commands.json", "org", "gw",
                 self.controller._execute_device_command, Mock(), Mock())
@@ -405,20 +405,25 @@ class ControllerBoundaryTests(unittest.TestCase):
             command = {"version": 1, "commandId": "one", "target": {
                 "organizationId": "org", "gatewayId": "gw", "deviceSerial": "one"},
                 "issuedAt": now.isoformat(), "expiresAt": (now + timedelta(seconds=60)).isoformat(),
-                "action": "device-command", "params": {"command": "restart"}}
+                "action": "device-command", "params": {
+                    "channelId": "main", "itemId": "power_control",
+                    "actionId": "turn_on"}}
             self.controller.on_receive_command("one", dict(command, commandId="old", expiresAt="2000-01-01T00:00:00Z"))
-            self.controller.devices["one"].execute_command_with_confirmation.assert_not_called()
+            self.controller.devices["one"].execute_action.assert_not_called()
             self.controller.on_receive_command("one", command)
             self.controller.on_receive_command("one", command)
-            self.controller.devices["one"].execute_command_with_confirmation.assert_called_once()
+            self.controller.devices["one"].execute_action.assert_called_once_with(
+                "main", "power_control", "turn_on")
 
     def test_connection_application_failure_is_logged(self):
         device = Mock()
-        device.update_connection_config.side_effect = OSError('unavailable')
+        device.update_connections.side_effect = OSError('unavailable')
         self.controller.devices = {'one': device}
         with self.assertRaises(OSError):
             self.controller._execute_device_command('one', {
-                'action': 'update-connections', 'params': {'host': '192.0.2.20'},
+                'action': 'update-connections', 'params': {'connections': [
+                    {'channelId': 'main', 'host': '192.0.2.20', 'port': 502}
+                ]},
             })
         self.assertIn('Error aplicando conexión', self.controller.log.call_args.args[0])
 

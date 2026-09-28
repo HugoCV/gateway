@@ -18,7 +18,9 @@ class DeviceCommandTests(unittest.TestCase):
         self.command = {'version': 1, 'commandId': 'one', 'issuedAt': now.isoformat(),
                         'expiresAt': (now + timedelta(seconds=60)).isoformat(),
                         'target': {'organizationId': 'org', 'gatewayId': 'gw', 'deviceSerial': 'pump'},
-                        'action': 'device-command', 'params': {'command': 'restart'}}
+                        'action': 'device-command', 'params': {
+                            'channelId': 'main', 'itemId': 'power_control',
+                            'actionId': 'turn_on'}}
         self.service = self.make_service()
 
     def make_service(self):
@@ -47,7 +49,7 @@ class DeviceCommandTests(unittest.TestCase):
     def test_reused_id_cannot_change_action(self):
         self.service.receive('pump', self.command)
         changed = copy.deepcopy(self.command)
-        changed['params']['command'] = 'turnOn'
+        changed['params']['actionId'] = 'turn_off'
         self.service.receive('pump', changed)
         self.execute.assert_called_once()
 

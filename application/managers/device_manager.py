@@ -1,6 +1,6 @@
 from domain.models.device import Device
 import json
-from infrastructure.activity_log import connection_summary, log_value, modbus_summary
+from infrastructure.activity_log import log_value, profile_summary
 
 class DeviceManager:
     def __init__(self, mqtt_client, refresh_devices, log_func=None):
@@ -33,8 +33,8 @@ class DeviceManager:
             self.log(
                 f"Dispositivo {log_value(device.get('serialNumber'))}, "
                 f"nombre={log_value(device.get('name'))}; "
-                f"conexión: {connection_summary(device.get('connectionConfig'))}; "
-                f"Modbus: {modbus_summary(device.get('modbusConfig'))}"
+                f"conexiones={len(device.get('connections') or [])}; "
+                f"perfil: {profile_summary(device.get('deviceProfileId'))}"
             )
         self.devices = devices
         self.refresh_devices(devices)
