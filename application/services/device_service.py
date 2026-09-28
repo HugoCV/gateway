@@ -7,7 +7,7 @@ from infrastructure.modbus.configured_channel import ConfiguredModbusChannel
 
 
 class DeviceService:
-    """Runs all enabled channels from a device's published DeviceProfile."""
+    """Runs enabled channels for active and commissioning devices."""
 
     def __init__(self, *, mqtt_handler, gateway_cfg, device, log, update_fields) -> None:
         self.mqtt = mqtt_handler
@@ -39,7 +39,7 @@ class DeviceService:
         self.stop()
 
     def _build_channels(self) -> None:
-        if self.device.get("commissioningStatus") != "active":
+        if self.device.get("commissioningStatus") not in {"active", "commissioning"}:
             return
         definitions = {
             channel.get("id"): channel
