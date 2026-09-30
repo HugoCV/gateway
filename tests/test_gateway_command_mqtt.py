@@ -47,6 +47,21 @@ class GatewayCommandMqttTests(unittest.TestCase):
         self.assertFalse(self.client.publish_device_command_result("pump", "one", "success", "restart"))
         self.info.wait_for_publish.assert_called_once_with(timeout=2)
 
+    def test_device_status_reports_the_configured_channel_without_brand_fields(self):
+        self.client.on_change_device_connection(
+            "pump", "online", None, "auxiliary", channel_status="online"
+        )
+        args, kwargs = self.client.client.publish.call_args
+        self.assertEqual(args[0], "tenant/org/gateway/gw/device/pump/status")
+        self.assertEqual(json.loads(args[1]), {
+            "status": "online",
+            "channelStatus": "online",
+            "connectionReason": None,
+            "channel": "auxiliary",
+            "failedRegisters": [],
+        })
+        self.assertEqual(kwargs, {"qos": 1, "retain": False})
+
     def test_no_ack_is_not_success(self):
         self.info.is_published.return_value = False
         self.assertFalse(self.client.publish_gateway_command_result(self.result))

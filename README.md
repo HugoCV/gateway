@@ -1,7 +1,7 @@
 # Gateway
 
 Gateway funciona como un servicio independiente de su ventana. El servicio es el
-único proceso que abre conexiones MQTT, Modbus y LOGO. La interfaz consulta su
+único proceso que abre conexiones MQTT y canales Modbus TCP/RTU. La interfaz consulta su
 estado por un socket Unix local y privado; abrir varias ventanas o cerrarlas no
 crea ni detiene conexiones a los dispositivos.
 

@@ -7,7 +7,7 @@ from pathlib import Path
 
 CONNECTION_FIELDS = (
     'host', 'tcpIp', 'tcpPort', 'httpPort', 'serialPort', 'baudrate',
-    'slaveId', 'logoIp', 'logoPort', 'mode', 'defaultReader',
+    'slaveId', 'mode', 'defaultReader',
 )
 
 

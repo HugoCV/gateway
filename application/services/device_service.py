@@ -29,9 +29,6 @@ class DeviceService:
         self.channels: Dict[str, ConfiguredModbusChannel] = {}
         self.channel_status: Dict[str, bool] = {}
         self.connected = False
-        self.connected_logo = False
-        # Kept for the local status window; configuration now lives per channel.
-        self.cc = {}
         self._build_channels()
         self.start()
 
@@ -88,7 +85,6 @@ class DeviceService:
             )
         )
         self.connected = sum(bool(value) for value in self.channel_status.values()) >= minimum
-        self.connected_logo = self.channel_status.get("logo", False)
         failed_registers = [
             {"name": entry["itemId"], "address": entry["address"]}
             for entry in failed_items
@@ -96,7 +92,6 @@ class DeviceService:
         self.mqtt.on_change_device_connection(
             self.serial,
             "online" if self.connected else "offline",
-            "online" if self.connected_logo else "offline",
             reason,
             channel_id,
             failed_registers,

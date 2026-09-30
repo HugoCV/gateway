@@ -28,8 +28,8 @@ class FakeController:
 
     def runtime_snapshot(self):
         return {"gateway": self.identity.copy(), "devices": [{
-            "name": "Pump", "serial": "001", "cc": {"serialPort": "/dev/ttyUSB0"},
-            "connected": True, "connected_logo": False,
+            "name": "Pump", "serial": "001",
+            "channels": [{"id": "main", "connected": True}], "connected": True,
         }]}
 
     def save_gateway_identity(self, organization_id, gateway_id):
@@ -375,12 +375,32 @@ class ControllerBoundaryTests(unittest.TestCase):
         self.controller.gateway_cfg = {'organizationId': 'org', 'gatewayId': 'gw', 'secret': 'hidden'}
         self.controller.devices = {'one': SimpleNamespace(
             name='Pump', serial='001', channels={'main': Mock()},
-            connected=True, connected_logo=False,
+            profile={'channels': [{'id': 'main', 'name': 'Conexión TCP'}]},
+            channel_status={'main': True}, connected=True,
         )}
         result = self.controller.runtime_snapshot()
         self.assertEqual(result['gateway'], {'organizationId': 'org', 'gatewayId': 'gw'})
-        self.assertEqual(result['devices'][0]['cc'], {'channels': 1})
+        self.assertEqual(result['devices'][0]['channels'], [
+            {'id': 'main', 'name': 'Conexión TCP', 'connected': True}
+        ])
         self.assertNotIn('hidden', json.dumps(result))
+
+    def test_device_list_displays_each_channel_status(self):
+        from ui.main_window import MainWindow
+
+        tree = Mock()
+        tree.get_children.return_value = []
+        window = SimpleNamespace(device_tree=tree, device_tree_tags_configured=False)
+        MainWindow._apply_device_list(window, [{
+            'name': 'Pump', 'serial': '001', 'connected': True,
+            'channels': [
+                {'id': 'main', 'name': 'Conexión TCP', 'connected': True},
+                {'id': 'auxiliary', 'connected': None},
+            ],
+        }])
+
+        values = tree.insert.call_args.kwargs['values']
+        self.assertEqual(values, ('Pump', '001', 'Conexión TCP: Online, auxiliary: Conectando', 'Online'))
 
     def test_environment_identity_cannot_be_silently_overridden(self):
         with patch.dict(os.environ, {'GATEWAY_ID': 'fixed'}, clear=True):

@@ -21,7 +21,7 @@ from infrastructure.activity_log import log_value
 class AppController:
     """
     Main controller for the Tkinter app.
-    Manages MQTT, Modbus (TCP/Serial), Logo, and HTTP connections.
+    Manages MQTT, Modbus TCP/RTU, and HTTP connections.
     """
 
     def __init__(
@@ -195,12 +195,23 @@ class AppController:
         """Expose only the identity and device fields needed by local windows."""
         devices = []
         for device in list(self.devices.values()):
+            channel_names = {
+                channel.get("id"): channel.get("name")
+                for channel in device.profile.get("channels", [])
+                if isinstance(channel, dict) and channel.get("id")
+            }
             devices.append({
                 "name": device.name,
                 "serial": device.serial,
-                "cc": {"channels": len(device.channels)},
+                "channels": [
+                    {
+                        "id": channel_id,
+                        "name": channel_names.get(channel_id) or channel_id,
+                        "connected": device.channel_status.get(channel_id),
+                    }
+                    for channel_id in device.channels
+                ],
                 "connected": bool(device.connected),
-                "connected_logo": bool(device.connected_logo),
             })
         return {
             "gateway": {key: self.gateway_cfg.get(key, "")

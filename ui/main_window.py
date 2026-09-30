@@ -158,33 +158,19 @@ class MainWindow(tk.Tk):
         tree_frame = ttk.Frame(frame)
         tree_frame.pack(fill="both", expand=True)
 
-        columns = ('name', 'serial_number', 'serial_port', 'baudrate', 'slave_id', 'tcp_ip', 'tcp_port', 'status' ,'logo_ip', 'logo_port', 'logo_status')
+        columns = ('name', 'serial_number', 'channels', 'status')
        
         self.device_tree = ttk.Treeview(tree_frame, columns=columns, show='headings', height=5)
         self.device_tree.heading('name', text='Nombre')
         self.device_tree.heading('serial_number', text='Número de Serie')
-        self.device_tree.heading('serial_port', text='Puerto Serial')
-        self.device_tree.heading('baudrate', text='Baudrate')
-        self.device_tree.heading('slave_id', text='Slave ID')
-        self.device_tree.heading('tcp_ip', text='IP TCP')
-        self.device_tree.heading('tcp_port', text='Puerto TCP')
-        self.device_tree.heading('status', text='Estado TCP/Serial')
-        self.device_tree.heading('logo_ip', text='IP LOGO!')
-        self.device_tree.heading('logo_port', text='Puerto LOGO!')
-        self.device_tree.heading('logo_status', text='Estado LOGO!')
+        self.device_tree.heading('channels', text='Canales de comunicación')
+        self.device_tree.heading('status', text='Estado general')
 
         # Column widths adjusted to fit the window
         self.device_tree.column('name', width=80, stretch=tk.YES)
         self.device_tree.column('serial_number', width=120, stretch=tk.NO)
-        self.device_tree.column('serial_port', width=110, anchor='center', stretch=tk.NO)
-        self.device_tree.column('baudrate', width=80, anchor='center', stretch=tk.NO)
-        self.device_tree.column('slave_id', width=70, anchor='center', stretch=tk.NO)
-        self.device_tree.column('tcp_ip', width=120, anchor='center', stretch=tk.NO)
-        self.device_tree.column('tcp_port', width=80, anchor='center', stretch=tk.NO)
-        self.device_tree.column('logo_ip', width=120, anchor='center', stretch=tk.NO)
+        self.device_tree.column('channels', width=450, anchor='w', stretch=tk.YES)
         self.device_tree.column('status', width=100, anchor='center', stretch=tk.NO)
-        self.device_tree.column('logo_port', width=120, anchor='center', stretch=tk.NO)
-        self.device_tree.column('logo_status', width=120, anchor='center', stretch=tk.NO)
 
         # Scrollbar
         scrollbar = ttk.Scrollbar(tree_frame, orient="vertical", command=self.device_tree.yview)
@@ -253,14 +239,14 @@ class MainWindow(tk.Tk):
         for item in self.device_tree.get_children():
             self.device_tree.delete(item)
         for index, device in enumerate(devices):
-            cc = device.get("cc", {})
+            channels = ", ".join(
+                f"{channel.get('name') or channel['id']}: "
+                f"{'Online' if channel.get('connected') is True else 'Offline' if channel.get('connected') is False else 'Conectando'}"
+                for channel in device.get("channels", [])
+            ) or "—"
             self.device_tree.insert('', 'end', values=(
                 device.get("name", "-"), device.get("serial", "-"),
-                cc.get("serialPort", "-"), cc.get("baudrate", "-"), cc.get("slaveId", "-"),
-                cc.get("host") if cc.get("host") not in (None, "-") else cc.get("tcpIp", "-"),
-                cc.get("tcpPort", "-"), "Online" if device.get("connected") else "Offline",
-                cc.get("logoIp", "-"), cc.get("logoPort", "-"),
-                "Online" if device.get("connected_logo") else "Offline",
+                channels, "Online" if device.get("connected") else "Offline",
             ), tags=('evenrow' if index % 2 == 0 else 'oddrow',))
 
     def _save_gateway_config(self):

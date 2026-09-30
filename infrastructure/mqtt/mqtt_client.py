@@ -199,9 +199,8 @@ class MqttClient:
         self,
         device_serial,
         status,
-        logo_status,
         connection_reason=None,
-        channel="direct",
+        channel=None,
         failed_registers=None,
         channel_status=None,
     ):
@@ -209,7 +208,6 @@ class MqttClient:
         payload = {
             "status": status,
             "channelStatus": channel_status or status,
-            "logoStatus": logo_status,
             "connectionReason": connection_reason,
             "channel": channel,
             "failedRegisters": failed_registers or [],

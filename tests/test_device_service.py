@@ -32,18 +32,19 @@ class DeviceServiceStatusTests(unittest.TestCase):
         service.profile = {"connectionPolicy": {"minimumEnabledChannels": 2}}
         service.channel_status = {}
         service.connected = False
-        service.connected_logo = False
         service.serial = "drive-1"
         service.mqtt = Mock()
 
         service._on_channel_status("main", True, None, [])
         first = service.mqtt.on_change_device_connection.call_args
         self.assertEqual(first.args[1], "offline")
+        self.assertEqual(first.args[3], "main")
         self.assertEqual(first.kwargs["channel_status"], "online")
 
         service._on_channel_status("backup", True, None, [])
         second = service.mqtt.on_change_device_connection.call_args
         self.assertEqual(second.args[1], "online")
+        self.assertEqual(second.args[3], "backup")
         self.assertEqual(second.kwargs["channel_status"], "online")
 
         service._on_channel_status("main", False, "connection_failed", [])
