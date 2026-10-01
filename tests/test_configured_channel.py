@@ -21,16 +21,16 @@ def make_channel(items):
 
 class ConfiguredChannelTests(unittest.TestCase):
     def test_decodes_int16_only_when_signed_is_enabled(self):
-        signed = {"kind": "measurement", "read": {"signed": True, "scale": 0.1, "absolute": True}}
-        unsigned = {"kind": "measurement", "read": {"signed": False, "scale": 0.1}}
+        signed = {"kind": "measurement", "read": {"signed": True, "absolute": True}}
+        unsigned = {"kind": "measurement", "read": {"signed": False}}
 
         self.assertEqual(
             ConfiguredModbusChannel._decode(signed, 0xFFF6),
-            {"value": 1, "rawValue": 0xFFF6, "kind": "measurement"},
+            {"value": 10, "rawValue": 0xFFF6, "kind": "measurement"},
         )
         self.assertEqual(
             ConfiguredModbusChannel._decode(unsigned, 0xFFF6)["value"],
-            6552.6,
+            65526,
         )
 
     def test_executes_only_an_action_declared_by_stable_item_and_action_ids(self):

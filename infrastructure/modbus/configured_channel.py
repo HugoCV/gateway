@@ -183,7 +183,6 @@ class ConfiguredModbusChannel:
         value: Any = raw
         if read.get("signed") and raw >= 0x8000:
             value = raw - 0x10000
-        value = value * float(read.get("scale", 1))
         if read.get("absolute"):
             value = abs(value)
         if isinstance(value, float) and value.is_integer():
