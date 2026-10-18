@@ -14,8 +14,10 @@ class DeviceManager:
             try:
                 data = json.loads(m.payload.decode("utf-8"))
                 self.set_devices(data["devices"])
+                return True
             except Exception as error:
                 self.log(f"❌ No se pudo procesar la configuración de dispositivos: {type(error).__name__}.")
+                return False
 
         try:
             self.mqtt_client.request_devices(

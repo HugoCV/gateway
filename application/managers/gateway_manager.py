@@ -29,11 +29,15 @@ class GatewayManager:
         def _cb(c,u,m):
             try:
                 data = json.loads(m.payload.decode("utf-8"))
+                if not isinstance(data, dict):
+                    raise ValueError("Se esperaba una configuración del gateway.")
                 self.log("Configuración del Gateway recibida por MQTT.")
                 self.set_gateway(data)
                 self.log("Configuración del Gateway cargada.")
+                return True
             except Exception as error:
                 self.log(f"❌ No se pudo procesar la configuración del Gateway: {type(error).__name__}.")
+                return False
 
         try:
             self.mqtt_client.request_gateway_config(

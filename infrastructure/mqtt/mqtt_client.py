@@ -2,6 +2,7 @@ import json
 import threading
 import ssl
 import time
+from dataclasses import dataclass
 from typing import Any, Dict, Optional, Callable
 
 import certifi
@@ -19,6 +20,17 @@ MQTT_PORT = cfg["MQTT_PORT"]
 MQTT_USER = cfg.get("MQTT_USER")
 MQTT_PASS = cfg.get("MQTT_PASS")
 GATEWAY_HEARTBEAT_INTERVAL_SECONDS = 15
+CONFIG_RETRY_INITIAL_SECONDS = 5
+CONFIG_RETRY_MAX_SECONDS = 60
+
+
+@dataclass
+class PendingConfigRequest:
+    request_topic: str
+    response_topic: str
+    label: str
+    attempts: int = 0
+    next_attempt_at: float = 0.0
 
 
 class MqttClient:
@@ -43,6 +55,8 @@ class MqttClient:
         self._heartbeat_thread: Optional[threading.Thread] = None
         self._connected_evt = threading.Event()
         self._stop_event = threading.Event()
+        self._pending_requests: Dict[str, PendingConfigRequest] = {}
+        self._pending_requests_lock = threading.Lock()
 
         self.gateway = gateway
         self._cfg_ev = threading.Event()
@@ -160,6 +174,8 @@ class MqttClient:
     def disconnect(self) -> None:
         """Disconnect the MQTT client and stop loop."""
         self._stop_event.set()
+        with self._pending_requests_lock:
+            self._pending_requests.clear()
         if self.client:
             if self._connected_evt.is_set():
                 self._publish_gateway_status("offline", wait=True)
@@ -239,6 +255,7 @@ class MqttClient:
         next_heartbeat = time.monotonic() + GATEWAY_HEARTBEAT_INTERVAL_SECONDS
         while not self._stop_event.wait(1):
             if self._connected_evt.is_set():
+                self._retry_pending_requests()
                 if time.monotonic() >= next_heartbeat:
                     self._publish_gateway_status("online")
                     next_heartbeat = time.monotonic() + GATEWAY_HEARTBEAT_INTERVAL_SECONDS
@@ -411,12 +428,74 @@ class MqttClient:
         serialized_signal = json.dumps(signal_info, default=str)
         self._publish(topic, serialized_signal, qos=1)
 
-    def request_gateway_config(self, cb: Callable) -> None:
-        self.client.message_callback_add(self.gatewayRespTopic, cb)
-        self.client.subscribe(self.gatewayRespTopic, qos=1)
-        self.client.publish(self.gatewayReqTopic, json.dumps({"timestamp": time.time()}), qos=1)
+    def _request_with_retry(self, request_topic: str, response_topic: str,
+                            callback: Callable[..., Optional[bool]], label: str) -> None:
+        if not self.client:
+            self.log(f"⚠️ MQTT no está listo para solicitar {label}.")
+            return
 
-    def request_devices(self, cb: Callable) -> None:
-        self.client.message_callback_add(self.deviceRespTopic, cb)
-        self.client.subscribe(self.deviceRespTopic, qos=1)
-        self.client.publish(self.deviceReqTopic, json.dumps({"timestamp": time.time()}), qos=1)
+        request = PendingConfigRequest(request_topic, response_topic, label)
+
+        def on_response(client, userdata, message) -> None:
+            with self._pending_requests_lock:
+                current = self._pending_requests.get(response_topic)
+                if current is not None and current is not request:
+                    return
+            try:
+                if callback(client, userdata, message) is False:
+                    return
+            except Exception as error:
+                self.log(f"⚠️ Respuesta de {label} inválida: {type(error).__name__}.")
+                return
+            completed = False
+            with self._pending_requests_lock:
+                if self._pending_requests.get(response_topic) is request:
+                    del self._pending_requests[response_topic]
+                    completed = True
+            if completed:
+                self.log(f"Configuración de {label} recibida; reintentos detenidos.")
+
+        with self._pending_requests_lock:
+            self._pending_requests[response_topic] = request
+        self.client.message_callback_add(response_topic, on_response)
+        self._send_pending_request(request)
+
+    def _send_pending_request(self, request: PendingConfigRequest) -> None:
+        with self._pending_requests_lock:
+            if self._pending_requests.get(request.response_topic) is not request:
+                return
+            request.attempts += 1
+            delay = min(CONFIG_RETRY_INITIAL_SECONDS * 2 ** min(request.attempts - 1, 4),
+                        CONFIG_RETRY_MAX_SECONDS)
+            request.next_attempt_at = time.monotonic() + delay
+
+        if not self.client or not self._connected_evt.is_set():
+            return
+        try:
+            result, _ = self.client.subscribe(request.response_topic, qos=1)
+            if result != mqtt.MQTT_ERR_SUCCESS:
+                self.log(f"⚠️ No se pudo suscribir a la respuesta de {request.label}; se reintentará.")
+                return
+        except Exception as error:
+            self.log(f"⚠️ No se pudo suscribir a la respuesta de {request.label}: {type(error).__name__}.")
+            return
+
+        if request.attempts > 1:
+            self.log(f"Sin respuesta de {request.label}; reintento {request.attempts - 1}.")
+        self._publish(request.request_topic, json.dumps({"timestamp": time.time()}), qos=1)
+
+    def _retry_pending_requests(self) -> None:
+        if not self._connected_evt.is_set() or self._stop_event.is_set():
+            return
+        now = time.monotonic()
+        with self._pending_requests_lock:
+            due = [request for request in self._pending_requests.values()
+                   if request.next_attempt_at <= now]
+        for request in due:
+            self._send_pending_request(request)
+
+    def request_gateway_config(self, cb: Callable[..., Optional[bool]]) -> None:
+        self._request_with_retry(self.gatewayReqTopic, self.gatewayRespTopic, cb, "gateway")
+
+    def request_devices(self, cb: Callable[..., Optional[bool]]) -> None:
+        self._request_with_retry(self.deviceReqTopic, self.deviceRespTopic, cb, "dispositivos")
