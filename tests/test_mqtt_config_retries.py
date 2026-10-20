@@ -76,7 +76,7 @@ class MqttConfigRetryTests(unittest.TestCase):
 
     def test_requests_retry_independently_and_later_device_batches_are_processed(self):
         config_callback = Mock(return_value=True)
-        device_callback = Mock(return_value=True)
+        device_callback = Mock(side_effect=[False, True])
         self.gateway.request_gateway_config(config_callback)
         config_response = self.gateway.client.message_callback_add.call_args.args[1]
         self.gateway.request_devices(device_callback)

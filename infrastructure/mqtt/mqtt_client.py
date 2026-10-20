@@ -42,12 +42,14 @@ class MqttClient:
         command_callback: Callable[[Optional[str], Any], None],
         command_gateway_callback: Callable[[Any], None],
         gateway_results_callback: Optional[Callable[[], None]] = None,
+        device_config_reload_callback: Optional[Callable[[], None]] = None,
     ) -> None:
         self.log = log_callback
         self.command_gateway_callback = command_gateway_callback
         self.command_callback = command_callback
         self.on_initial_load = on_initial_load
         self.gateway_results_callback = gateway_results_callback
+        self.device_config_reload_callback = device_config_reload_callback
 
         self.client: Optional[mqtt.Client] = None
         self._loop_started = False
@@ -75,6 +77,8 @@ class MqttClient:
         self.gatewayReqTopic = self._topic_publish_gateway_req(self.org_id, self.gw_id)
         self.deviceReqTopic = self._topic_publish_device_req(self.org_id, self.gw_id)
         self.deviceRespTopic = self._topic_subscribe_device_resp(self.org_id, self.gw_id)
+        self.deviceConfigReloadTopic = f"tenant/{self.org_id}/gateway/{self.gw_id}/device/config/reload"
+        self.deviceConfigAppliedTopic = f"tenant/{self.org_id}/gateway/{self.gw_id}/device/config/applied"
 
         self._log_initial_config()
 
@@ -207,6 +211,7 @@ class MqttClient:
 
         client.subscribe(self.gatewayCommandTopic, qos=1)
         self.log(f"Subscribed to commands: {self.gatewayCommandTopic}")
+        client.subscribe(self.deviceConfigReloadTopic, qos=1)
         self._connected_evt.set()
         self._publish_gateway_status("online")
         self.on_initial_load()
@@ -284,6 +289,11 @@ class MqttClient:
 
     def on_message(self, client, userdata, msg):
         self.log(f"MQTT recibido: {msg.topic} ({len(msg.payload)} bytes).")
+        if msg.topic == self.deviceConfigReloadTopic:
+            if self.device_config_reload_callback:
+                self.log("Cambio de configuración recibido; solicitando dispositivos actualizados.")
+                self.device_config_reload_callback()
+            return
         if topic_matches_sub(self.deviceCommandTopic, msg.topic):
             parts = msg.topic.split("/")
             try:
@@ -360,6 +370,22 @@ class MqttClient:
             return False
 
     # ---------- Public API ----------
+    def publish_device_config_applied(self, devices: list) -> bool:
+        applied = []
+        for device in devices:
+            profile = device.get("deviceProfileId") or {}
+            if not isinstance(profile, dict) or not profile.get("_id") or not profile.get("updatedAt"):
+                continue
+            applied.append({
+                "deviceId": str(device.get("_id")),
+                "profileId": str(profile["_id"]),
+                "profileRevision": str(profile["updatedAt"]),
+            })
+        return self._publish(
+            self.deviceConfigAppliedTopic,
+            json.dumps({"devices": applied}), qos=1, retain=False,
+        )
+
     def publish_gateway_command_result(self, result: Dict[str, Any]) -> bool:
         if not self._connected_evt.is_set():
             return False
@@ -439,7 +465,7 @@ class MqttClient:
         def on_response(client, userdata, message) -> None:
             with self._pending_requests_lock:
                 current = self._pending_requests.get(response_topic)
-                if current is not None and current is not request:
+                if current is not request:
                     return
             try:
                 if callback(client, userdata, message) is False:

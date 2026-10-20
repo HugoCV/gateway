@@ -42,6 +42,27 @@ class GatewayCommandMqttTests(unittest.TestCase):
         self.assertEqual(kwargs, {"qos": 1, "retain": False})
         self.info.wait_for_publish.assert_called_once_with(timeout=2)
 
+    def test_reload_message_requests_fresh_device_config(self):
+        callback = Mock()
+        self.client.device_config_reload_callback = callback
+        self.client.on_message(self.client.client, None, SimpleNamespace(
+            topic="tenant/org/gateway/gw/device/config/reload", payload=b"{}"))
+        callback.assert_called_once_with()
+
+    def test_reports_applied_profile_revision(self):
+        self.assertTrue(self.client.publish_device_config_applied([{
+            "_id": "device-1", "deviceProfileId": {
+                "_id": "profile-1", "updatedAt": "2026-10-20T10:00:00.000Z",
+            },
+        }]))
+        args, kwargs = self.client.client.publish.call_args
+        self.assertEqual(args[0], "tenant/org/gateway/gw/device/config/applied")
+        self.assertEqual(json.loads(args[1])["devices"], [{
+            "deviceId": "device-1", "profileId": "profile-1",
+            "profileRevision": "2026-10-20T10:00:00.000Z",
+        }])
+        self.assertEqual(kwargs, {"qos": 1, "retain": False})
+
     def test_device_result_waits_for_broker_ack(self):
         self.info.is_published.return_value = False
         self.assertFalse(self.client.publish_device_command_result("pump", "one", "success", "restart"))

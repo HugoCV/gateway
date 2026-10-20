@@ -60,6 +60,7 @@ class AppController:
             command_callback=self.on_receive_command,
             command_gateway_callback=self.on_receive_gateway_command,
             gateway_results_callback=self.flush_command_results,
+            device_config_reload_callback=self.on_device_config_reload,
         )
 
         if self.window:
@@ -186,6 +187,9 @@ class AppController:
         self.gateway_manager.load_gateway()
         self.device_manager.load_devices()
 
+    def on_device_config_reload(self):
+        self.device_manager.load_devices()
+
     # === Gateway ===
     # NOTE: This method is currently unused as the UI fields have been removed.
     def _refresh_gateway_fields(self, gateway):
@@ -264,11 +268,17 @@ class AppController:
             self.window.update_device_list(self.services)
 
     def create_all_devices(self, devices):
-        for ds in getattr(self, "devices", {}).values():
-            ds.stop()
-
+        existing = getattr(self, "devices", {})
         device_services = {}
         for dev in devices:
+            serial = dev.get("serialNumber")
+            previous = existing.get(serial)
+            runtime_fields = ("name", "serialNumber", "deviceProfileId", "connections", "parameters", "commissioningStatus")
+            if previous and all(previous.device.get(field) == dev.get(field) for field in runtime_fields):
+                device_services[serial] = previous
+                continue
+            if previous:
+                previous.stop()
             ds = DeviceService(
                 mqtt_handler=self.mqtt_handler,
                 gateway_cfg=self.gateway_cfg,
@@ -278,4 +288,7 @@ class AppController:
             )
 
             device_services[ds.serial] = ds
+        for serial, previous in existing.items():
+            if serial not in device_services:
+                previous.stop()
         return device_services

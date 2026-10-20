@@ -10,10 +10,27 @@ class DeviceManager:
         self.refresh_devices = refresh_devices
 
     def load_devices(self):
+        batches = {}
+        expected_total = None
+
         def _cb(c,u,m):
+            nonlocal expected_total
             try:
                 data = json.loads(m.payload.decode("utf-8"))
-                self.set_devices(data["devices"])
+                devices = data["devices"]
+                if not isinstance(devices, list):
+                    raise ValueError("Se esperaba una lista de dispositivos.")
+                total = data.get("total", 1)
+                index = data.get("index", 0)
+                if not isinstance(total, int) or total < 1 or not isinstance(index, int) or not 0 <= index < total:
+                    raise ValueError("Lote de dispositivos inválido.")
+                if expected_total != total:
+                    batches.clear()
+                    expected_total = total
+                batches[index] = devices
+                if len(batches) < total:
+                    return False
+                self.set_devices([device for batch in range(total) for device in batches[batch]])
                 return True
             except Exception as error:
                 self.log(f"❌ No se pudo procesar la configuración de dispositivos: {type(error).__name__}.")
@@ -39,4 +56,7 @@ class DeviceManager:
             )
         self.devices = devices
         self.refresh_devices(devices)
+        publish_applied = getattr(self.mqtt_client, "publish_device_config_applied", None)
+        if callable(publish_applied) and not publish_applied(devices):
+            self.log("⚠️ No se pudo confirmar la configuración aplicada al backend.")
         self.log(f"Configuración cargada: {len(devices)} dispositivo(s). Conexiones iniciadas.")
