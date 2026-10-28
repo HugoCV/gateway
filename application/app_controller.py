@@ -217,10 +217,52 @@ class AppController:
                 ],
                 "connected": bool(device.connected),
             })
+        signal_publications = []
+        snapshot_signals = getattr(getattr(self, "mqtt_handler", None),
+                                   "sent_signals_snapshot", None)
+        if callable(snapshot_signals):
+            for publication in snapshot_signals():
+                device = self.devices.get(publication["serial"])
+                if not device or publication["channelId"] not in device.channels:
+                    continue
+                channel = next((entry for entry in device.profile.get("channels", [])
+                                if isinstance(entry, dict)
+                                and entry.get("id") == publication["channelId"]), None)
+                if channel is None:
+                    continue
+                definitions = {
+                    str(item["id"]): item
+                    for item in channel.get("items", [])
+                    if isinstance(item, dict) and item.get("id")
+                }
+                signals = []
+                for item_id, data in publication["payload"].items():
+                    definition = definitions.get(item_id, {})
+                    read = definition.get("read") or {}
+                    if not isinstance(read, dict):
+                        read = {}
+                    signals.append({
+                        "id": item_id,
+                        "name": definition.get("name") or item_id,
+                        "address": read.get("address"),
+                        "value": data.get("value") if isinstance(data, dict) else data,
+                    })
+                signal_publications.append({
+                    "deviceName": device.name,
+                    "serial": device.serial,
+                    "channelName": channel.get("name") or publication["channelId"],
+                    "channelId": publication["channelId"],
+                    "topic": publication["topic"],
+                    "sentAt": publication["sentAt"],
+                    "delivery": publication["delivery"],
+                    "omitted": publication["omitted"],
+                    "signals": signals,
+                })
         return {
             "gateway": {key: self.gateway_cfg.get(key, "")
                         for key in ("organizationId", "gatewayId")},
             "devices": devices,
+            "signalPublications": signal_publications,
         }
 
     def save_gateway_identity(self, organization_id, gateway_id):
@@ -262,6 +304,7 @@ class AppController:
         if devices is None:
             devices = {}
 
+        self.mqtt_handler.clear_sent_signals()
         self.devices = self.create_all_devices(devices)
         self.services = list(self.devices.values())
         if self.window:

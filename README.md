@@ -59,6 +59,14 @@ o se reinicia, muestra que está esperando y vuelve a conectarse automáticament
 Al cerrar la sesión, el servicio continúa funcionando. Sin escritorio no puede
 mostrarse una ventana.
 
+La sección **Señales enviadas** presenta el último mensaje MQTT de cada canal:
+nombre e ID de la señal, dirección Modbus configurada, valor enviado, hora y
+estado de entrega. **Confirmado** significa que el cliente MQTT recibió la
+confirmación del broker; **Sin confirmar** indica que aceptó el mensaje pero
+todavía no hay confirmación, y **No enviado** que la publicación falló. Al
+seleccionar una fila se muestra el topic MQTT de destino. Es una vista en vivo
+limitada a los mensajes recientes por canal, no un historial persistente.
+
 La cabecera distingue el estado del servicio systemd, su inicio automático y si
 el Gateway responde a la ventana. Consulta `systemctl is-active` e `is-enabled`
 cada cinco segundos en segundo plano, sin `sudo` ni cambios al servicio. Un
@@ -88,6 +96,22 @@ GATEWAY_CONFIG_PATH=/ruta/privada/gateway.json python3 main.py --mode gui
 El socket se crea en `runtime/control.sock` junto al archivo de identidad, con
 permisos 0600 dentro de un directorio 0700. No expone un puerto de red. El bloqueo
 del runtime impide iniciar un segundo servicio; las ventanas no toman ese bloqueo.
+
+### Ver un Gateway de Docker desde macOS
+
+Con Docker Desktop abierto y el contenedor del entorno local en ejecución, abra
+la ventana existente en modo de solo lectura:
+
+```bash
+./venv/bin/python view_docker_gateway.py --container alrotek-dev-gateway-1
+```
+
+Para la simulación de Pozo Luisiana, cambie el nombre a
+`alrotek-dev-pozo-luisiana-gateway-1`. El visor consulta el socket privado dentro
+del contenedor mediante `docker exec`; no abre un puerto, no inicia otro motor y
+no permite guardar la identidad ni reiniciar el servicio. Cerrar la ventana no
+detiene el contenedor. Este modo necesita Python con Tkinter y acceso local a
+Docker; no es una interfaz web.
 
 En instalaciones anteriores, cierre la antigua ventana operativa antes de
 actualizar. Publique primero el Gateway actualizado y luego use el instalador

@@ -2,6 +2,7 @@ import json
 import threading
 import ssl
 import time
+from collections import OrderedDict
 from dataclasses import dataclass
 from typing import Any, Dict, Optional, Callable
 
@@ -22,6 +23,8 @@ MQTT_PASS = cfg.get("MQTT_PASS")
 GATEWAY_HEARTBEAT_INTERVAL_SECONDS = 15
 CONFIG_RETRY_INITIAL_SECONDS = 5
 CONFIG_RETRY_MAX_SECONDS = 60
+MAX_SIGNAL_CHANNELS = 64
+MAX_SIGNALS_PER_CHANNEL = 256
 
 
 @dataclass
@@ -59,6 +62,8 @@ class MqttClient:
         self._stop_event = threading.Event()
         self._pending_requests: Dict[str, PendingConfigRequest] = {}
         self._pending_requests_lock = threading.Lock()
+        self._signal_lock = threading.Lock()
+        self._last_signal_publications = OrderedDict()
 
         self.gateway = gateway
         self._cfg_ev = threading.Event()
@@ -351,6 +356,7 @@ class MqttClient:
         qos: int = 1,
         retain: bool = False,
         wait: bool = False,
+        on_accepted: Optional[Callable[[Any], None]] = None,
     ) -> bool:
         if not self.client:
             self.log("⚠️ MQTT client not ready to publish.")
@@ -359,8 +365,9 @@ class MqttClient:
             info = self.client.publish(topic, payload, qos=qos, retain=retain)
             if info.rc != mqtt.MQTT_ERR_SUCCESS:
                 self.log(f"⚠️ publish() failed rc={info.rc} topic={topic}")
-                print(self.log(f"⚠️ publish() failed rc={info.rc} topic={topic}"))
                 return False
+            if on_accepted is not None:
+                on_accepted(info)
             if wait:
                 info.wait_for_publish(timeout=2)
                 return info.is_published()
@@ -441,18 +448,72 @@ class MqttClient:
             )
         return published
 
-    def send_signal(self, topic_info: Dict[str, str], signal_info: Dict[str, Any]) -> None:
+    def send_signal(self, topic_info: Dict[str, str], signal_info: Dict[str, Any]) -> bool:
         org_id = topic_info.get("organization_id") or topic_info.get("organizationId")
         gw_id = topic_info.get("gateway_id") or topic_info.get("gatewayId")
         serial = topic_info.get("serial_number") or topic_info.get("serialNumber")
 
         if not (org_id and gw_id and serial):
             self.log(f"⚠️ Missing topic info: {topic_info}")
-            return
+            return False
 
         topic = self._topic_publish_signal(org_id, gw_id, serial)
         serialized_signal = json.dumps(signal_info, default=str)
-        self._publish(topic, serialized_signal, qos=1)
+        accepted_infos = []
+        accepted = self._publish(
+            topic, serialized_signal, qos=1, on_accepted=accepted_infos.append
+        )
+        payload = json.loads(serialized_signal).get("payload")
+        if isinstance(payload, dict):
+            channel_id = str(signal_info.get("channelId") or "")
+            values = dict(list(payload.items())[:MAX_SIGNALS_PER_CHANNEL])
+            entry = {
+                "serial": str(serial),
+                "channelId": channel_id,
+                "topic": topic,
+                "sentAt": time.time(),
+                "payload": values,
+                "omitted": max(0, len(payload) - len(values)),
+                "accepted": accepted,
+                "info": accepted_infos[0] if accepted_infos else None,
+            }
+            with self._signal_lock:
+                key = (entry["serial"], channel_id)
+                self._last_signal_publications.pop(key, None)
+                self._last_signal_publications[key] = entry
+                while len(self._last_signal_publications) > MAX_SIGNAL_CHANNELS:
+                    self._last_signal_publications.popitem(last=False)
+        return accepted
+
+    def sent_signals_snapshot(self) -> list:
+        """Return bounded, JSON-safe details of the latest publication per channel."""
+        with self._signal_lock:
+            entries = list(reversed(self._last_signal_publications.values()))
+        result = []
+        for entry in entries:
+            info = entry["info"]
+            try:
+                confirmed = bool(info and info.is_published())
+            except (AttributeError, RuntimeError, ValueError):
+                confirmed = False
+            result.append({
+                "serial": entry["serial"],
+                "channelId": entry["channelId"],
+                "topic": entry["topic"],
+                "sentAt": entry["sentAt"],
+                "payload": entry["payload"].copy(),
+                "omitted": entry["omitted"],
+                "delivery": (
+                    "confirmed" if confirmed else
+                    "unconfirmed" if entry["accepted"] else "failed"
+                ),
+            })
+        return result
+
+    def clear_sent_signals(self) -> None:
+        """Discard values from a superseded device configuration."""
+        with self._signal_lock:
+            self._last_signal_publications.clear()
 
     def _request_with_retry(self, request_topic: str, response_topic: str,
                             callback: Callable[..., Optional[bool]], label: str) -> None:

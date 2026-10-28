@@ -83,6 +83,33 @@ class GatewayCommandMqttTests(unittest.TestCase):
         })
         self.assertEqual(kwargs, {"qos": 1, "retain": False})
 
+    def test_sent_signal_snapshot_tracks_actual_publish_and_broker_ack(self):
+        signal = {"channelId": "main", "payload": {"curr": {"value": 8.5, "rawValue": 85}}}
+        topic = {"organization_id": "org", "gateway_id": "gw", "serial_number": "pump"}
+        self.info.is_published.return_value = False
+
+        self.assertTrue(self.client.send_signal(topic, signal))
+        args, kwargs = self.client.client.publish.call_args
+        self.assertEqual(args[0], "tenant/org/gateway/gw/device/pump/signal")
+        self.assertEqual(json.loads(args[1]), signal)
+        self.assertEqual(kwargs, {"qos": 1, "retain": False})
+        pending = self.client.sent_signals_snapshot()[0]
+        self.assertEqual(pending["delivery"], "unconfirmed")
+        self.assertEqual(pending["payload"]["curr"]["value"], 8.5)
+
+        self.info.is_published.return_value = True
+        self.assertEqual(self.client.sent_signals_snapshot()[0]["delivery"], "confirmed")
+        self.client.clear_sent_signals()
+        self.assertEqual(self.client.sent_signals_snapshot(), [])
+
+    def test_failed_signal_publish_is_not_reported_as_sent(self):
+        self.info.rc = 4
+        topic = {"organization_id": "org", "gateway_id": "gw", "serial_number": "pump"}
+        self.assertFalse(self.client.send_signal(topic, {
+            "channelId": "main", "payload": {"fault": {"value": 1}},
+        }))
+        self.assertEqual(self.client.sent_signals_snapshot()[0]["delivery"], "failed")
+
     def test_no_ack_is_not_success(self):
         self.info.is_published.return_value = False
         self.assertFalse(self.client.publish_gateway_command_result(self.result))

@@ -385,6 +385,30 @@ class ControllerBoundaryTests(unittest.TestCase):
         ])
         self.assertNotIn('hidden', json.dumps(result))
 
+    def test_snapshot_enriches_published_signals_with_real_profile_addresses(self):
+        self.controller.gateway_cfg = {'organizationId': 'org', 'gatewayId': 'gw'}
+        self.controller.devices = {'PUMP-1': SimpleNamespace(
+            name='Bomba', serial='PUMP-1', channels={'main': Mock()},
+            profile={'channels': [{
+                'id': 'main', 'name': 'Conexión TCP',
+                'items': [{'id': 'curr', 'name': 'Corriente', 'read': {'address': 321}}],
+            }]},
+            channel_status={'main': True}, connected=True,
+        )}
+        self.controller.mqtt_handler = SimpleNamespace(sent_signals_snapshot=lambda: [{
+            'serial': 'PUMP-1', 'channelId': 'main',
+            'topic': 'tenant/org/gateway/gw/device/PUMP-1/signal',
+            'sentAt': 1234.5, 'delivery': 'confirmed', 'omitted': 0,
+            'payload': {'curr': {'value': 8.5, 'rawValue': 85}},
+        }])
+
+        result = self.controller.runtime_snapshot()
+        self.assertEqual(result['signalPublications'][0]['signals'], [{
+            'id': 'curr', 'name': 'Corriente', 'address': 321, 'value': 8.5,
+        }])
+        self.assertEqual(result['signalPublications'][0]['delivery'], 'confirmed')
+        self.assertNotIn('rawValue', json.dumps(result))
+
     def test_device_list_displays_each_channel_status(self):
         from ui.main_window import MainWindow
 
@@ -401,6 +425,45 @@ class ControllerBoundaryTests(unittest.TestCase):
 
         values = tree.insert.call_args.kwargs['values']
         self.assertEqual(values, ('Pump', '001', 'Conexión TCP: Online, auxiliary: Conectando', 'Online'))
+
+    def test_signal_table_shows_configured_address_and_delivery(self):
+        from ui.main_window import MainWindow
+
+        tree = Mock()
+        tree.selection.return_value = ()
+        tree.get_children.side_effect = [[], ['row-1']]
+        tree.insert.return_value = 'row-1'
+        window = SimpleNamespace(
+            signal_tree=tree, signal_summary_var=Mock(), signal_topic_var=Mock(),
+            _signal_rows={}, _last_signal_publications=None,
+            _format_signal_value=MainWindow._format_signal_value,
+            _on_signal_selection=Mock(),
+        )
+        MainWindow._apply_signal_publications(window, [{
+            'deviceName': 'Bomba', 'serial': 'PUMP-1',
+            'channelName': 'Conexión TCP', 'channelId': 'main',
+            'topic': 'tenant/org/gateway/gw/device/PUMP-1/signal',
+            'sentAt': 1234.5, 'delivery': 'confirmed', 'omitted': 0,
+            'signals': [{'id': 'curr', 'name': 'Corriente', 'address': 321, 'value': 8.5}],
+        }])
+        row = tree.insert.call_args.kwargs['values']
+        self.assertEqual(row[:5], ('Bomba', 'Conexión TCP', 'Corriente (curr)', 321, '8.5'))
+        self.assertEqual(row[6], 'Confirmado')
+        self.assertEqual(window._signal_rows['row-1']['topic'],
+                         'tenant/org/gateway/gw/device/PUMP-1/signal')
+
+    def test_selected_signal_shows_mqtt_destination(self):
+        from ui.main_window import MainWindow
+
+        tree = Mock()
+        tree.selection.return_value = ('row-1',)
+        topic = Mock()
+        window = SimpleNamespace(
+            signal_tree=tree, signal_topic_var=topic,
+            _signal_rows={'row-1': {'topic': 'tenant/org/device/PUMP-1/signal'}},
+        )
+        MainWindow._on_signal_selection(window)
+        topic.set.assert_called_once_with('Destino MQTT: tenant/org/device/PUMP-1/signal')
 
     def test_environment_identity_cannot_be_silently_overridden(self):
         with patch.dict(os.environ, {'GATEWAY_ID': 'fixed'}, clear=True):
